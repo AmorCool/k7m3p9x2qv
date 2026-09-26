@@ -39,9 +39,11 @@ jobs:
         include:
           - arch: x64
             host: x86_64-w64-mingw32
+            triple: x86_64-w64-mingw32
             pkg: gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
           - arch: x86
             host: i686-w64-mingw32
+            triple: i686-w64-mingw32
             pkg: gcc-mingw-w64-i686 g++-mingw-w64-i686
 
     steps:
@@ -59,7 +61,9 @@ jobs:
       - name: Build
         env:
           HOST: ${{ matrix.host }}
-        run: ./platform/windows/build.sh
+        # Invoked through bash rather than by path: the executable bit is
+        # not reliably preserved through a checkout on every platform.
+        run: bash platform/windows/build.sh
 
       - name: Verify
         run: |
@@ -120,7 +124,9 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
-          ./platform/ios/build.sh ${{ matrix.sdk }} 2>&1 | tee build-${{ matrix.name }}.log
+          # Same reason as the Windows job: call it through bash rather than
+          # relying on the executable bit.
+          bash platform/ios/build.sh ${{ matrix.sdk }} 2>&1 | tee build-${{ matrix.name }}.log
 
       - name: Report errors
         if: failure()
