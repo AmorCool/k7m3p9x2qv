@@ -314,7 +314,7 @@ if [ ! -f .configured ]; then
     touch .configured
 fi
 
-# Built by target rather than with `make install`.
+# Built and installed by target rather than with `make install`.
 #
 # sqlite's Makefile lists the command-line shell under bin_PROGRAMS, so the
 # default target builds it, and shell.c calls system() -- which the iOS SDK
@@ -325,36 +325,16 @@ fi
 #
 # and takes the library down with it. It cannot be switched off: the shell is
 # unconditional in the generated Makefile, and --enable-static-shell controls
-# only whether the shell links the library statically. The library is the only
-# thing aria2 needs, so it is built directly and installed by hand.
+# only whether the shell links the library statically.
+#
+# The three install targets below are exactly the library, the header and the
+# pkg-config file. Naming them is more reliable than copying by hand, because
+# the library is a libtool target and libtool keeps the real archive in
+# `.libs/` -- a hand-written `cp libsqlite3.a` fails with "No such file or
+# directory" even though the build succeeded.
 echo "==> build sqlite3 (library only)"
 make -j"$JOBS" libsqlite3.la >/dev/null
-mkdir -p "$PREFIX/lib/pkgconfig"
-cp libsqlite3.a "$PREFIX/lib/"
-cp sqlite3.h "$PREFIX/include/"
-# aria2 finds sqlite3 through pkg-config, so a .pc file has to exist even
-# though this path never generated one. It is written from a template and
-# substituted in two steps rather than with a single heredoc, because the
-# substitution and the redirection cannot both be expressed on one command.
-cat > "$PREFIX/lib/pkgconfig/sqlite3.pc.template" <<'PC'
-prefix=@prefix@
-exec_prefix=${prefix}
-libdir=@libdir@
-includedir=@includedir@
-
-Name: SQLite
-Description: SQL database engine
-Version: @version@
-Libs: -L${libdir} -lsqlite3
-Libs.private: -lpthread -ldl -lm
-Cflags: -I${includedir}
-PC
-sed -e "s|@prefix@|$PREFIX|g" \
-    -e "s|@libdir@|$PREFIX/lib|g" \
-    -e "s|@includedir@|$PREFIX/include|g" \
-    -e "s|@version@|3.36.0|g" \
-    "$PREFIX/lib/pkgconfig/sqlite3.pc.template" > "$PREFIX/lib/pkgconfig/sqlite3.pc"
-rm -f "$PREFIX/lib/pkgconfig/sqlite3.pc.template"
+make install-libLTLIBRARIES install-includeHEADERS install-pkgconfigDATA >/dev/null
 
 mkdir -p "$BUILD_ROOT/libssh2" && cd "$BUILD_ROOT/libssh2"
 fetch "$BUILD_ROOT/libssh2" "$LIBSSH2"
