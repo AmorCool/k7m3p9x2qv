@@ -7,9 +7,12 @@
 # so a platform script that forgets one would produce a binary that looks right
 # and behaves differently.
 #
-# Usage:  scripts/fetch-and-patch.sh <version> <destination>
-#   version      e.g. 1.37.0
-#   destination  directory to unpack into (created; must be empty or absent)
+# Usage:  scripts/fetch-and-patch.sh <version> <destination> [platform-patch-dir]
+#   version            e.g. 1.37.0
+#   destination        directory to unpack into (created; must be empty or absent)
+#   platform-patch-dir optional; every *.patch in it is applied after the
+#                      Turbo set. Used for changes that belong to one target
+#                      rather than to this fork as a whole.
 #
 # Licence: the resulting binary is GPLv3. See LICENSE.
 
@@ -17,6 +20,7 @@ set -euo pipefail
 
 ARIA2_VERSION="${1:?usage: fetch-and-patch.sh <version> <destination>}"
 DEST="${2:?usage: fetch-and-patch.sh <version> <destination>}"
+PLATFORM_PATCH_DIR="${3:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -89,6 +93,19 @@ apply_patch "$PATCH_DIR/0004-option-set-no-want-digest-header-default-to-true.pa
 # same thing the reference build ships.
 if [ "${TURBO_DEFAULTS:-0}" = "1" ]; then
     apply_patch "$PATCH_DIR/0005-options-raise-the-split-default.patch"
+fi
+
+# Platform patches come last, and are applied in filename order.
+#
+# These are not part of the fork's identity the way the Turbo set is -- they
+# fix something that is only wrong on one target. Keeping them separate is what
+# lets the Windows and Linux binaries stay byte-comparable with the reference
+# build while iOS gets the corrections it needs.
+if [ -n "$PLATFORM_PATCH_DIR" ] && [ -d "$PLATFORM_PATCH_DIR" ]; then
+    for patch_file in "$PLATFORM_PATCH_DIR"/*.patch; do
+        [ -e "$patch_file" ] || continue
+        apply_patch "$patch_file"
+    done
 fi
 
 echo "==> patched"

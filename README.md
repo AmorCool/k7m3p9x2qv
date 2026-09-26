@@ -134,7 +134,7 @@ Forcing an empty prefix would pass the check and is the wrong answer: the
 prefix exists on these platforms so a bundled allocator does not displace the
 system one, and replacing `malloc` on iOS is not supported.
 
-Six things about the iOS build are worth knowing before changing it:
+Eight things about the iOS build are worth knowing before changing it:
 
 - **No bitcode.** `-fembed-bitcode-marker` makes the linker believe
   `ENABLE_BITCODE` is on, which collides with OpenSSL's provider modules —
@@ -159,6 +159,24 @@ Six things about the iOS build are worth knowing before changing it:
   `*.sym.o` targets call `$(CC)` with no `CFLAGS` at all. For such a package
   the sysroot has to go into `CC`, where it is part of the command. This is
   recorded rather than fixed, because nothing here builds jemalloc now.
+- **`PKG_CONFIG_LIBDIR`, not just `PKG_CONFIG_PATH`.** The first adds to
+  pkg-config's search path, the second replaces it. With only the first, a
+  runner that has Homebrew installed answers for OpenSSL with the host's copy:
+
+  ```
+  OpenSSL: yes (CFLAGS='-I/opt/homebrew/Cellar/openssl@3/3.6.3/include'
+                  LIBS='-L/opt/homebrew/Cellar/openssl@3/3.6.3/lib -lssl -lcrypto')
+  ```
+
+  That is a macOS library. Setting both variables points pkg-config at
+  `$PREFIX/lib/pkgconfig` and nowhere else, which is what a cross-build needs.
+- **`-lrt` does not exist here.** aria2's `configure.ac` adds
+  `-lpthread -ldl -lrt` for a static build on any host that is not mingw, msvc
+  or darwin. `arm64-apple-ios` is none of those, so it took the Linux branch
+  and the link failed with `ld: library 'rt' not found`. On iOS all three live
+  in libSystem. `patch/platform/ios/` carries the fix, and it is kept out of
+  the Turbo set so that the Windows and Linux binaries stay comparable with
+  the reference build.
 
 ### Linux
 

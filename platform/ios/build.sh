@@ -106,6 +106,22 @@ export CFLAGS="$TRIPLE_CFLAGS $PLATFORM_FLAGS -O2"
 export CXXFLAGS="$CFLAGS"
 export LDFLAGS="$TRIPLE_CFLAGS $PLATFORM_FLAGS"
 
+# pkg-config must see the dependencies built here, and only those.
+#
+# PKG_CONFIG_PATH alone is not enough. It adds to the default search path
+# rather than replacing it, so on a runner that has Homebrew installed,
+# pkg-config answers for OpenSSL with the host's copy:
+#
+#     OpenSSL: yes (CFLAGS='-I/opt/homebrew/Cellar/openssl@3/3.6.3/include'
+#                     LIBS='-L/opt/homebrew/Cellar/openssl@3/3.6.3/lib
+#                           -lssl -lcrypto')
+#
+# That is a macOS library. Linking an iOS binary against it either fails or
+# produces one that cannot run, and neither says which library was wrong.
+# PKG_CONFIG_LIBDIR replaces the default path, which is what excludes it.
+export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
+
 # autoconf answers that must be supplied rather than detected.
 #
 # configure decides these by compiling a test program and running it, which
@@ -427,7 +443,9 @@ echo "==> skipping jemalloc (the unprefixed allocator is unavailable on macho)"
 # aria2
 # ---------------------------------------------------------------------------
 
-"$ROOT_DIR/scripts/fetch-and-patch.sh" "$ARIA2_VERSION" "$ARIA2_SRC"
+# The third argument is the iOS-specific patch set. See fetch-and-patch.sh for
+# why these are kept apart from the Turbo patches.
+"$ROOT_DIR/scripts/fetch-and-patch.sh" "$ARIA2_VERSION" "$ARIA2_SRC" "$ROOT_DIR/patch/platform/ios"
 cd "$ARIA2_SRC"
 
 # The ca-bundle path is baked in at configure time on iOS as elsewhere. There

@@ -1,0 +1,34 @@
+From: aria2-cross <noreply@example.invalid>
+Subject: [PATCH] configure: do not link the Linux system libraries on iOS
+
+EXTRALIBS gains -lpthread -ldl -lrt for a static build on any host that is
+not mingw, msvc or darwin. arm64-apple-ios is none of those, so it took the
+Linux branch and the link failed with
+
+    ld: library 'rt' not found
+
+iOS is Darwin: pthread, dlopen and clock_gettime all live in libSystem, and
+there is no librt, libdl or libpthread to link against. Listing ios beside
+darwin is the whole fix.
+
+This is a platform patch, not a Turbo patch. It is not part of the reference
+build because the reference build is Linux, where the libraries are real.
+
+---
+--- a/configure.ac
++++ b/configure.ac
+@@ -1022,8 +1022,13 @@
+   # libtool.
+   EXTRALDFLAGS="$EXTRALDFLAGS -all-static"
+   dnl For non-MinGW build, we need additional libs for static build.
++  dnl
++  dnl iOS is Darwin: pthread, dlopen and clock_gettime all live in libSystem,
++  dnl and there is no separate librt, libdl or libpthread to link against.
++  dnl Listing ios beside darwin is what keeps the Linux library set out of the
++  dnl link, where it fails with `ld: library 'rt' not found`.
+   case "$host" in
+-    *mingw*|*msvc*|*darwin*)
++    *mingw*|*msvc*|*darwin*|*ios*)
+     ;;
+ 
+     *)
