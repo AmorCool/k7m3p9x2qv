@@ -474,17 +474,57 @@ if [ ! -f .configured ]; then
     # Assigned per-command so the dependencies keep the LDFLAGS they were
     # configured with; only aria2 links against Security.
     #
-    # LIBS, not LDFLAGS. Passing it through LDFLAGS looked right -- configure
-    # recorded it, and the summary printed it:
+    # The flag is spelled -Wl,-framework,Security rather than -framework
+    # Security, and that spelling is the whole fix. Both reach the libtool
+    # link line; only one of them survives it.
     #
-    #     LDFLAGS: -arch arm64 -isysroot ... -framework Security
+    # GNU libtool records a framework for a Darwin host and for no other. From
+    # ltmain.sh, in the argument loop:
     #
-    # and the link still failed with the same two undefined symbols, because
-    # the value never reached the linker. Searching the build log for
-    # "Security" found exactly two hits, both in configure output; the link
-    # command had none. LIBS is the one automake always appends to the link
-    # line, so that is where it goes.
-    LIBS="-framework Security" ./configure \
+    #     framework)
+    #       case $host in
+    #         *-*-darwin*)
+    #           case "$deplibs " in
+    #             *" $qarg.ltframework "*) ;;
+    #             *) func_append deplibs " $qarg.ltframework"
+    #
+    # This build's host is arm64-apple-ios, which does not match *-*-darwin*,
+    # so the case body is skipped, `prev=` follows, and the argument is
+    # dropped on the floor. Nothing reaches deplibs, nothing reaches
+    # compile_command, and no warning is printed. "-framework Security" is
+    # removed from the link silently -- which is why configure recorded it,
+    # the summary printed it, and the link command contains no trace of it.
+    #
+    # -Wl,* takes a different path out of the same loop. It is split on commas
+    # and rebuilt into the loop's own $arg, and $arg is appended to
+    # compile_command unconditionally, without consulting $host:
+    #
+    #     -Wl,*)
+    #       func_stripname '-Wl,' '' "$arg"
+    #       ... for flag in $args; do func_append arg " $wl$func_quote_arg_result"
+    #     ...
+    #     if test -n "$arg"; then ... func_append compile_command " $arg"
+    #
+    # So this arrives at the link as -Wl,-framework -Wl,Security, and clang
+    # hands "-framework Security" to ld.
+    #
+    # -all-static is not involved, though it looks like it should be: it is
+    # libtool's own flag and it is set for this build. It does nothing here.
+    # -all-static appends $link_static_flag, that variable is initialised from
+    # lt_prog_compiler_static, and libtool.m4 clears it when the check that it
+    # works fails:
+    #
+    #     _LT_LINKER_OPTION([if $compiler static flag $lt_tmp_static_flag works],
+    #       ..., $lt_tmp_static_flag, [],
+    #       [_LT_TAGVAR(lt_prog_compiler_static, $1)=])
+    #
+    # Configure logged that failure --
+    #
+    #     checking if ... clang++ ... static flag -static works... no
+    #
+    # -- so the variable is empty, -all-static expands to nothing, and
+    # removing it would change nothing.
+    LIBS="-Wl,-framework,Security" ./configure \
         --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" \
         --with-libz \
@@ -507,7 +547,14 @@ if [ ! -f .configured ]; then
 fi
 
 echo "==> build aria2c"
-make -j"$JOBS" >/dev/null
+# V=1, and no redirect to /dev/null.
+#
+# Automake's silent rules print "CXXLD aria2c" and nothing else, so a link
+# failure arrives without the command that produced it. That is how a missing
+# "-framework Security" was diagnosed twice from the error text alone, with
+# the link line itself unreadable. V=1 puts the real command in the log, which
+# is where the next one of these should be read rather than reconstructed.
+make V=1 -j"$JOBS"
 
 mkdir -p "$OUT_DIR"
 
