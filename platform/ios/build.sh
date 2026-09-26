@@ -170,20 +170,39 @@ do_build() {
 # not every host packages them in the same place.
 refresh_config_helpers() {
     local dir="$1" helper source
+    # Homebrew is the normal source on a macOS runner, and it is not always at
+    # the same prefix, so ask it rather than assume /opt/homebrew.
+    local brew_prefix=""
+    if command -v brew >/dev/null 2>&1; then
+        brew_prefix="$(brew --prefix 2>/dev/null)"
+    fi
+
     for helper in config.sub config.guess; do
         [ -f "$dir/$helper" ] || continue
         for source in \
-            "$(command -v "g$helper" 2>/dev/null)" \
-            "$(command -v "$helper" 2>/dev/null)" \
+            ${brew_prefix:+"$brew_prefix"/share/automake*/"$helper"} \
             /opt/homebrew/share/automake*/"$helper" \
             /usr/local/share/automake*/"$helper" \
             /usr/share/automake*/"$helper"
         do
-            if [ -n "$source" ] && [ -f "$source" ]; then
-                cp "$source" "$dir/$helper"
-                chmod +x "$dir/$helper"
-                break
-            fi
+            [ -f "$source" ] || continue
+            # config.sub is validated by running it: it has to be able to
+            # normalise the triple we are about to pass, and an old copy
+            # demonstrably cannot. That is the whole point of replacing it, so
+            # it is also the right test.
+            #
+            # config.guess is not validated this way and does not need to be.
+            # It ignores its arguments and prints the machine it runs on, so
+            # it cannot be asked the question and is never the problem --
+            # whatever copy the runner has answers correctly for the runner.
+            case "$helper" in
+                config.sub)
+                    sh "$source" "$ARCH-apple-darwin" >/dev/null 2>&1 || continue
+                    ;;
+            esac
+            cp "$source" "$dir/$helper"
+            chmod +x "$dir/$helper"
+            break
         done
     done
 }
@@ -210,6 +229,7 @@ do_build expat
 mkdir -p "$BUILD_ROOT/c-ares" && cd "$BUILD_ROOT/c-ares"
 fetch "$BUILD_ROOT/c-ares" "$C_ARES"
 if [ ! -f .configured ]; then
+    refresh_config_helpers "$BUILD_ROOT/c-ares"
     ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-tests
     touch .configured
@@ -273,6 +293,7 @@ if [ ! -f .configured ]; then
     # uses: wincng routes libssh2 through the Windows crypto API, which does
     # not exist here. Picking it explicitly avoids libssh2 selecting a backend
     # by sniffing the host and getting it wrong during a cross-compile.
+    refresh_config_helpers "$BUILD_ROOT/libssh2"
     ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-examples-build \
         --with-openssl
@@ -285,6 +306,7 @@ fetch "$BUILD_ROOT/jemalloc" "$JEMALLOC"
 if [ ! -f .configured ]; then
     # jemalloc's configure probes for a working `je_` prefix and for the page
     # size; on iOS both are answered rather than detected.
+    refresh_config_helpers "$BUILD_ROOT/jemalloc"
     ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-stats \
         je_cv_force_defined_je_prefix=no
@@ -306,6 +328,7 @@ cd "$ARIA2_SRC"
 CA_BUNDLE="/usr/share/aria2/ca-bundle.crt"
 
 if [ ! -f .configured ]; then
+    refresh_config_helpers "$ARIA2_SRC"
     ./configure \
         --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" \
