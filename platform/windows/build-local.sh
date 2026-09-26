@@ -169,8 +169,8 @@ cd "$ARIA2_SRC"
 # which is the mingw target itself.
 #
 # ARIA2_STATIC=yes does two things inside configure.ac: it appends --static to
-# PKG_CONFIG, so the Libs.private entries (-lws2_32, -lcrypt32 and the rest of
-# OpenSSL's Win32 baggage) are pulled in, and on i686 it defines
+# PKG_CONFIG, so the Libs.private entries (-lws2_32, -lcrypt32, -lsecur32 and
+# the rest of the Win32 baggage) are pulled in, and on i686 it defines
 # _USE_32BIT_TIME_T, which the 32-bit mingw runtime needs because it does not
 # implement the 64-bit time functions.
 #
@@ -178,8 +178,13 @@ cd "$ARIA2_SRC"
 # the linker prefers each package's lib<name>.dll.a and the executable ends up
 # importing zlib1.dll, libcrypto-3-x64.dll and so on.
 #
-# --with-ca-bundle matches build.sh. It is compiled in, not read at runtime, so
-# the two builds look for the CA bundle in the same place.
+# --with-ca-bundle is here because build.sh passes it, not because it takes
+# effect. aria2 selects WinTLS on mingw -- appletls, wintls, gnutls and openssl
+# are tried in that order and each sets have_ssl, so the openssl block is
+# skipped once wintls has succeeded -- and WinTLS ignores a CA bundle file,
+# logging "TLS CA bundle files are not supported. The system trust store will
+# be used." once per run. Keeping the flag identical to build.sh is the point:
+# the two builds should differ only where they have to.
 CA_BUNDLE="C:/ProgramData/aria2/ca-bundle.crt"
 
 if [ ! -f .configured ]; then
