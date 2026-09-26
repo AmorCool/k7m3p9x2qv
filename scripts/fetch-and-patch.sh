@@ -55,21 +55,40 @@ cd "$DEST"
 # `git init` inside the build tree writes a .git directory into what we are
 # about to compile, so patch(1) is used instead -- it is what git apply shells
 # out to for this kind of input anyway.
+# Apply one patch, or report why it could not be.
+#
+# The check used to be `patch --dry-run --reverse --silent`, on the reasoning
+# that a reverse dry run succeeds exactly when the patch is already in place.
+# On the macOS runner it succeeded for all five patches against a tree that had
+# just been unpacked, so every one was reported as already applied, none were
+# applied, and the consequence appeared much later as a link against a library
+# that only exists on Linux. The same check answers correctly under GNU patch
+# on this machine, so the difference is in the patch implementation rather than
+# in the patch files.
+#
+# Requiring both answers fixes it without depending on which implementation is
+# running: forward succeeds when the patch is still needed, reverse succeeds
+# when it is already in place, and neither means the tree is in a state this
+# script does not recognise -- worth stopping for rather than guessing at.
 apply_patch() {
     local patch_file="$1"
     local name
     name="$(basename "$patch_file")"
 
-    # Already applied? Several of these touch the same file, and a rerun after
-    # a failed build must not double-apply. `patch --dry-run -R` succeeds
-    # exactly when the patch is already in place.
-    if patch -p1 --dry-run --reverse --silent < "$patch_file" >/dev/null 2>&1; then
+    if patch -p1 -s --dry-run < "$patch_file" >/dev/null 2>&1; then
+        echo "    [apply] $name"
+        patch -p1 -s < "$patch_file"
+        return 0
+    fi
+
+    if patch -p1 -s -R --dry-run < "$patch_file" >/dev/null 2>&1; then
         echo "    [skip] $name (already applied)"
         return 0
     fi
 
-    echo "    [apply] $name"
-    patch -p1 --forward --silent < "$patch_file"
+    echo "    [fail] $name -- it applies neither forwards nor in reverse"
+    echo "           the source tree is in a state this script does not know"
+    return 1
 }
 
 # Order matters only in that all of them must land. Independent hunks, but
