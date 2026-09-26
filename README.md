@@ -177,6 +177,13 @@ Eight things about the iOS build are worth knowing before changing it:
   in libSystem. `patch/platform/ios/` carries the fix, and it is kept out of
   the Turbo set so that the Windows and Linux binaries stay comparable with
   the reference build.
+- **Patch `configure`, not only `configure.ac`.** The release tarball ships
+  `configure` already generated, and that generated file is what runs.
+  Patching only `configure.ac` changes a file nothing reads, and the build
+  fails in exactly the way the patch was meant to prevent — which is what
+  happened here. Regenerating would need autoconf in the version the tree was
+  built with; `fetch-and-patch.sh` patches the generated file directly and
+  then touches the timestamps so make does not try to regenerate it either.
 
 ### Linux
 

@@ -11,22 +11,38 @@ iOS is Darwin: pthread, dlopen and clock_gettime all live in libSystem, and
 there is no librt, libdl or libpthread to link against. Listing ios beside
 darwin is the whole fix.
 
+Both files are patched, and that part is not optional. The release tarball
+ships configure already generated, and configure is what actually runs --
+patching configure.ac alone changes a file nothing reads, because the
+generated copy still holds the old case statement. Regenerating it instead
+would need autoconf in a version matching the tree, which the runner does not
+have; fetch-and-patch.sh touches the generated files for the same reason.
+
 This is a platform patch, not a Turbo patch. It is not part of the reference
 build because the reference build is Linux, where the libraries are real.
 
 ---
 --- a/configure.ac
 +++ b/configure.ac
-@@ -1022,8 +1022,13 @@
+@@ -1022,8 +1022,11 @@
    # libtool.
    EXTRALDFLAGS="$EXTRALDFLAGS -all-static"
    dnl For non-MinGW build, we need additional libs for static build.
 +  dnl
 +  dnl iOS is Darwin: pthread, dlopen and clock_gettime all live in libSystem,
 +  dnl and there is no separate librt, libdl or libpthread to link against.
-+  dnl Listing ios beside darwin is what keeps the Linux library set out of the
-+  dnl link, where it fails with `ld: library 'rt' not found`.
    case "$host" in
+-    *mingw*|*msvc*|*darwin*)
++    *mingw*|*msvc*|*darwin*|*ios*)
+     ;;
+ 
+     *)
+--- a/configure
++++ b/configure
+@@ -28519,7 +28519,7 @@
+   # libtool.
+   EXTRALDFLAGS="$EXTRALDFLAGS -all-static"
+     case "$host" in
 -    *mingw*|*msvc*|*darwin*)
 +    *mingw*|*msvc*|*darwin*|*ios*)
      ;;
