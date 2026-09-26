@@ -26,6 +26,22 @@
 # the binary unable to fetch HTTPS. This fork requires HTTPS, so OpenSSL is
 # built and enabled -- that is the one deliberate departure from their recipe.
 #
+# OpenSSL is not, however, what ends up providing HTTPS here. aria2 selects
+# its TLS backend by trying appletls, wintls, gnutls and openssl in that
+# order, and each of them sets have_ssl on success, so on mingw wintls wins
+# and the openssl block is skipped. configure prints the outcome:
+#
+#     WinTLS:         yes
+#     OpenSSL:        no
+#
+# The visible consequence is that --with-ca-bundle is ignored at run time and
+# aria2 logs "TLS CA bundle files are not supported. The system trust store
+# will be used." once per run. HTTPS works; it just uses the system store.
+#
+# Passing --without-wintls would make OpenSSL the backend and the CA bundle
+# meaningful again. It is left off because the local MSYS2 build and this one
+# should agree, and the current behaviour is not broken.
+#
 # Output: build/windows/<arch>/aria2c.exe
 #
 # Licence: GPLv3. See LICENSE.
