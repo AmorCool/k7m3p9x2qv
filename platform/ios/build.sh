@@ -473,7 +473,18 @@ if [ ! -f .configured ]; then
     #
     # Assigned per-command so the dependencies keep the LDFLAGS they were
     # configured with; only aria2 links against Security.
-    LDFLAGS="$LDFLAGS -framework Security" ./configure \
+    #
+    # LIBS, not LDFLAGS. Passing it through LDFLAGS looked right -- configure
+    # recorded it, and the summary printed it:
+    #
+    #     LDFLAGS: -arch arm64 -isysroot ... -framework Security
+    #
+    # and the link still failed with the same two undefined symbols, because
+    # the value never reached the linker. Searching the build log for
+    # "Security" found exactly two hits, both in configure output; the link
+    # command had none. LIBS is the one automake always appends to the link
+    # line, so that is where it goes.
+    LIBS="-framework Security" ./configure \
         --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" \
         --with-libz \
