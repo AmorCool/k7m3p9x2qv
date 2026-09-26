@@ -102,14 +102,18 @@ Two outputs, for two integration styles:
   process edge and lets the downloader die without taking the UI with it.
 - `libaria2.a` — a static library, for linking aria2 into an app directly.
 
-Deployment target defaults to `18.0`; override with
-`IPHONEOS_DEPLOYMENT_TARGET`.
+Deployment target follows the SDK on the machine, and `IPHONEOS_DEPLOYMENT_TARGET`
+clamps it. The clamp matters: asking for 18.0 against an SDK of 17.5 does not
+fail at configure time, it makes clang stop applying the sysroot, and the first
+dependency that needs an SDK-only header dies with `'math.h' file not found`.
+Most dependencies only include libc headers and keep working, so it surfaces
+late and reads as a broken toolchain.
 
 OpenSSL uses its `iphoneos-cross` preset with `no-asm`, because the perlasm
 output is not compatible with the arm64 Darwin ABI. jemalloc is included here,
 unlike Windows.
 
-Four things about the iOS build are worth knowing before changing it:
+Five things about the iOS build are worth knowing before changing it:
 
 - **No bitcode.** `-fembed-bitcode-marker` makes the linker believe
   `ENABLE_BITCODE` is on, which collides with OpenSSL's provider modules —
@@ -127,6 +131,8 @@ Four things about the iOS build are worth knowing before changing it:
 - **sqlite's shell is not built.** It is in `bin_PROGRAMS`, calls `system()`,
   and `system()` is unavailable on iOS, so the default target fails and takes
   the library with it. The library target is built directly.
+- **The deployment target must not exceed the SDK.** See above — the failure it
+  causes names `math.h`, not the deployment target.
 
 ### Linux
 

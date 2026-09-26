@@ -18,7 +18,9 @@
 # nearly free once the objects exist and it keeps the door open for the
 # other integration style.
 #
-# Deployment target: 18.0, matching the consuming project. Overridable.
+# Deployment target: the SDK's own version, so a dependency that needs an SDK
+# header cannot be built against a sysroot clang has stopped applying. Set
+# IPHONEOS_DEPLOYMENT_TARGET to lower it, or to raise it when the SDK allows.
 #
 # Licence: GPLv3. See LICENSE. Shipping the binary means shipping the source
 # of this fork, including the patches, which is why they live in this repo.
@@ -27,7 +29,6 @@ set -euo pipefail
 
 SDK="${1:-iphoneos}"                   # iphoneos | iphonesimulator
 ARIA2_VERSION="${ARIA2_VERSION:-1.37.0}"
-DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-18.0}"
 ARCH="${ARCH:-arm64}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,6 +41,31 @@ OUT_DIR="$BUILD_ROOT"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
 
 SDK_PATH="$(xcrun -sdk "$SDK" -show-sdk-path)"
+
+# The deployment target is clamped to the SDK on the machine.
+#
+# Declaring 18.0 against an SDK of 17.5 is not a request clang can honour, and
+# it does not say so: it stops applying the sysroot, and the first dependency
+# that includes a header only the SDK provides fails with
+#
+#     include/jemalloc/internal/jemalloc_internal_decls.h:4:10:
+#         fatal error: 'math.h' file not found
+#
+# which reads as a broken toolchain. Dependencies that only include libc
+# headers keep working, so the failure appears late and looks unrelated.
+#
+# The clamp uses the SDK's own major and minor versions, so a newer Xcode
+# raises the target automatically. Set IPHONEOS_DEPLOYMENT_TARGET to override,
+# and it is clamped too -- a caller who asks for more than the SDK offers gets
+# the SDK, not a build that fails a dependency later.
+read -r SDK_MAJOR SDK_MINOR <<<"$(basename "$SDK_PATH" | sed -nE 's/^[A-Za-z]+([0-9]+)\.([0-9]+).*/\1 \2/p')"
+SDK_VERSION="${SDK_MAJOR:-17}.${SDK_MINOR:-0}"
+
+requested_target="${IPHONEOS_DEPLOYMENT_TARGET:-$SDK_VERSION}"
+# `sort -V` picks the lower of the two: the request when it is already
+# satisfiable, the SDK when the request is ahead of it.
+DEPLOYMENT_TARGET="$(printf '%s\n%s\n' "$requested_target" "$SDK_VERSION" | sort -V | head -1)"
+
 CC_BIN="$(xcrun -sdk "$SDK" -f clang)"
 CXX_BIN="$(xcrun -sdk "$SDK" -f clang++)"
 
