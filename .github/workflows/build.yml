@@ -199,8 +199,25 @@ jobs:
           file "$OUT/aria2c" | grep -q 'arm64'
           lipo -info "$OUT/aria2c" || true
           test -s "$OUT/libaria2.a"
-          strings "$OUT/aria2c" | grep -q 'max-connection-per-server'
-          strings "$OUT/aria2c" | grep -q 'retry-on-400'
+
+          # The binary is dumped to a file once and searched there, rather than
+          # streamed into `grep -q`.
+          #
+          # Xcode ships LLVM's strings, not GNU's, and it does not tolerate a
+          # reader that stops early:
+          #
+          #     error: .../XcodeDefault.xctoolchain/usr/bin/strings: failed to
+          #         flush output
+          #
+          # `grep -q` exits the moment it matches, which closes the pipe, which
+          # makes strings report that and exit non-zero -- and under
+          # `set -o pipefail` that fails the step even though the match was
+          # found. GNU strings on the Windows job ignores the same condition,
+          # which is why this only ever broke here. Reading from a file means
+          # the reader always reaches end of input.
+          strings "$OUT/aria2c" > "$OUT/aria2c.strings"
+          grep -q 'max-connection-per-server' "$OUT/aria2c.strings"
+          grep -q 'retry-on-400' "$OUT/aria2c.strings"
 
       - name: Stage
         run: |
