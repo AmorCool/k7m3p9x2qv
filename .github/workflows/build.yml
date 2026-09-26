@@ -84,11 +84,25 @@ jobs:
             x64) file "$EXE" | grep -q 'x86-64' ;;
             x86) file "$EXE" | grep -q 'Intel 80386' ;;
           esac
-          # The Turbo patches have to be visible in the binary, not just in the
-          # source. --help is generated from the option table, so a missing
-          # patch shows up as a missing line here.
-          strings "$EXE" | grep -q 'max-connection-per-server'
-          strings "$EXE" | grep -q 'retry-on-400'
+
+          # It has to run, not merely look right.
+          #
+          # `strings` was the entire check here for a while, and a strings
+          # check passes on a binary that cannot start. During that time the
+          # engine was passing --max-connection-per-server=-1, which aria2
+          # refuses with errorCode=28 before it opens its RPC port, while every
+          # option the strings check looked for was present exactly as
+          # expected. Starting it is the only thing that would have said so.
+          "$EXE" --version
+
+          # And the patches have to be in the option table. --help is generated
+          # from that table, so a missing patch shows up as a missing line, and
+          # an unpatched ceiling shows up as a bounded range.
+          "$EXE" --help=#all > help.txt
+          grep -q 'max-connection-per-server' help.txt
+          grep -q 'retry-on-400' help.txt
+          # 1-16 without the patch. The engine relies on this being open.
+          grep -A6 -- '--max-connection-per-server' help.txt | grep -q 'Possible Values: 1-\*'
 
       - name: Stage
         run: |
