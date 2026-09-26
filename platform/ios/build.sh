@@ -454,7 +454,26 @@ CA_BUNDLE="/usr/share/aria2/ca-bundle.crt"
 
 if [ ! -f .configured ]; then
     refresh_config_helpers "$ARIA2_SRC"
-    ./configure \
+
+    # Security.framework, for the one symbol that needs it.
+    #
+    # SimpleRandomizer.cc picks its random source by platform, and the Apple
+    # branch calls SecRandomCopyBytes with kSecRandomDefault:
+    #
+    #     #elif defined(__APPLE__)
+    #       auto rv = SecRandomCopyBytes(kSecRandomDefault, len, buf);
+    #
+    # Both live in Security.framework, and nothing else here pulls it in, so
+    # the link ends with
+    #
+    #     "_SecRandomCopyBytes", referenced from:
+    #         aria2::SimpleRandomizer::getRandomBytes(unsigned char*, unsigned long)
+    #     "_kSecRandomDefault", referenced from:
+    #         aria2::SimpleRandomizer::getRandomBytes(unsigned char*, unsigned long)
+    #
+    # Assigned per-command so the dependencies keep the LDFLAGS they were
+    # configured with; only aria2 links against Security.
+    LDFLAGS="$LDFLAGS -framework Security" ./configure \
         --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" \
         --with-libz \

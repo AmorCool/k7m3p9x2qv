@@ -134,7 +134,7 @@ Forcing an empty prefix would pass the check and is the wrong answer: the
 prefix exists on these platforms so a bundled allocator does not displace the
 system one, and replacing `malloc` on iOS is not supported.
 
-Eight things about the iOS build are worth knowing before changing it:
+Nine things about the iOS build are worth knowing before changing it:
 
 - **No bitcode.** `-fembed-bitcode-marker` makes the linker believe
   `ENABLE_BITCODE` is on, which collides with OpenSSL's provider modules —
@@ -177,6 +177,12 @@ Eight things about the iOS build are worth knowing before changing it:
   in libSystem. `patch/platform/ios/` carries the fix, and it is kept out of
   the Turbo set so that the Windows and Linux binaries stay comparable with
   the reference build.
+- **`Security.framework` is needed for one symbol.** `SimpleRandomizer.cc`
+  selects its random source per platform, and the Apple branch calls
+  `SecRandomCopyBytes(kSecRandomDefault, ...)`. Nothing else here pulls in
+  Security, so the link ends with `_SecRandomCopyBytes` and `_kSecRandomDefault`
+  undefined. It is added to aria2's `LDFLAGS` for that configure only, so the
+  dependencies keep the flags they were built with.
 - **Patch `configure`, not only `configure.ac`.** The release tarball ships
   `configure` already generated, and that generated file is what runs.
   Patching only `configure.ac` changes a file nothing reads, and the build
