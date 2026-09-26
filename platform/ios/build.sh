@@ -85,16 +85,45 @@ source "$ROOT_DIR/dependences"
 # more on a phone than on a desktop.
 # ---------------------------------------------------------------------------
 
+# Download and unpack a dependency.
+#
+# The decompressor is chosen from the URL rather than tried in sequence. Trying
+# each one in turn looks harmless and is not: a failed `tar -J` has already
+# consumed part of the stream, so the following attempt sees a truncated
+# archive and the one after that has nothing left. The visible symptom is
+# `curl: (23) Failure writing output to destination` followed by a build that
+# runs in an empty directory.
 fetch() {
     local dir="$1" url="$2"
     if [ -d "$dir" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
         return 0
     fi
+
+    local flag
+    case "$url" in
+        *.tar.xz|*.txz)   flag="-J" ;;
+        *.tar.bz2|*.tbz2) flag="-j" ;;
+        *.tar.gz|*.tgz)   flag="-z" ;;
+        *) echo "unsupported archive type: $url" >&2; return 1 ;;
+    esac
+
     mkdir -p "$dir"
     echo "==> fetch $(basename "$url")"
-    curl -fsSL "$url" | tar -x --strip-components=1 -C "$dir" -J 2>/dev/null ||
-        curl -fsSL "$url" | tar -x --strip-components=1 -C "$dir" -z 2>/dev/null ||
-        curl -fsSL "$url" | tar -x --strip-components=1 -C "$dir" -j
+    # A temporary file rather than a pipe into tar, so a network failure is
+    # reported as a network failure instead of as a corrupt archive.
+    local archive="$dir/.download"
+    # A half-unpacked tree looks populated and would be skipped on a retry, so
+    # a failure removes it. The guard is what makes a rerun after a network
+    # blip actually redo the work.
+    if ! curl -fsSL -o "$archive" "$url"; then
+        rm -rf "$dir"
+        return 1
+    fi
+    if ! tar -x "$flag" -C "$dir" --strip-components=1 -f "$archive"; then
+        rm -rf "$dir"
+        return 1
+    fi
+    rm -f "$archive"
 }
 
 do_build() {

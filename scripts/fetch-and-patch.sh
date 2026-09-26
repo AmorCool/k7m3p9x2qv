@@ -36,7 +36,13 @@ if [ -d "$DEST" ] && [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
 else
     mkdir -p "$DEST"
     echo "    fetching $TARBALL_URL"
-    curl -fsSL "$TARBALL_URL" | tar -xJ -C "$DEST" --strip-components=1
+    # Downloaded to a file first, then unpacked. A pipe straight into tar
+    # reports a network failure as a corrupt archive, and a failed attempt has
+    # already consumed part of the stream.
+    ARCHIVE="$DEST/.aria2.tar.xz"
+    curl -fsSL -o "$ARCHIVE" "$TARBALL_URL"
+    tar -xJ -C "$DEST" --strip-components=1 -f "$ARCHIVE"
+    rm -f "$ARCHIVE"
 fi
 
 cd "$DEST"
