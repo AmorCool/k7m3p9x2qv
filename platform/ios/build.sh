@@ -51,7 +51,7 @@ export STRIP="$(xcrun -f strip)"
 export LIBTOOL="$(xcrun -f libtool)"
 
 # -arch and the sysroot have to go through CFLAGS/CXXFLAGS rather than --host,
-# because Apple's clang is not a target-triple compiler: `--host=arm-apple-darwin`
+# because Apple's clang is not a target-triple compiler: a bare --host
 # produces a triple that autoconf accepts but clang does not act on. Passing the
 # flags explicitly is the supported way to cross-compile to iOS.
 TRIPLE_CFLAGS="-arch $ARCH -isysroot $SDK_PATH"
@@ -96,7 +96,7 @@ export ac_cv_func_working_mktime="yes"
 #
 # which reads as a broken compiler rather than as a mismatched pair of triples.
 #
-# The value must therefore differ from "$ARCH-apple-darwin". `uname -m` alone
+# The value must therefore differ from "$ARCH-apple-ios". `uname -m` alone
 # is not usable for this: on Apple Silicon it answers `arm64`, which is the same
 # architecture the target uses, so the two triples compare equal and
 # cross-compiling is switched off. Translating it to the canonical name gives
@@ -175,9 +175,10 @@ do_build() {
 # Point a dependency at a current config.sub/config.guess.
 #
 # Tarballs carry whatever config.sub their release was cut with, and the older
-# ones do not know `arm64-apple-darwin` -- sqlite3's is old enough to abort with
+# ones do not know every arm64 Darwin triple -- sqlite3's is old enough to
+# abort before it does anything else:
 #
-#     configure: error: /bin/sh ./config.sub arm64-apple-darwin failed
+#     configure: error: /bin/sh ./config.sub arm64-apple-ios failed
 #
 # before it does anything else. Refreshing the two helpers is the supported way
 # out and is cheaper than pinning a host triple the tree predates: the copy
@@ -213,7 +214,7 @@ refresh_config_helpers() {
             # whatever copy the runner has answers correctly for the runner.
             case "$helper" in
                 config.sub)
-                    sh "$source" "$ARCH-apple-darwin" >/dev/null 2>&1 || continue
+                    sh "$source" "$ARCH-apple-ios" >/dev/null 2>&1 || continue
                     ;;
             esac
             cp "$source" "$dir/$helper"
@@ -235,7 +236,7 @@ mkdir -p "$BUILD_ROOT/expat" && cd "$BUILD_ROOT/expat"
 fetch "$BUILD_ROOT/expat" "$EXPAT"
 if [ ! -f .configured ]; then
     refresh_config_helpers "$BUILD_ROOT/expat"
-    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
+    ./configure --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --without-examples --without-tests \
         --without-docbook
     touch .configured
@@ -246,7 +247,7 @@ mkdir -p "$BUILD_ROOT/c-ares" && cd "$BUILD_ROOT/c-ares"
 fetch "$BUILD_ROOT/c-ares" "$C_ARES"
 if [ ! -f .configured ]; then
     refresh_config_helpers "$BUILD_ROOT/c-ares"
-    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
+    ./configure --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-tests
     touch .configured
 fi
@@ -296,7 +297,7 @@ mkdir -p "$BUILD_ROOT/sqlite3" && cd "$BUILD_ROOT/sqlite3"
 fetch "$BUILD_ROOT/sqlite3" "$SQLITE3"
 if [ ! -f .configured ]; then
     refresh_config_helpers "$BUILD_ROOT/sqlite3"
-    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
+    ./configure --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-dynamic-extensions
     touch .configured
 fi
@@ -310,7 +311,7 @@ if [ ! -f .configured ]; then
     # not exist here. Picking it explicitly avoids libssh2 selecting a backend
     # by sniffing the host and getting it wrong during a cross-compile.
     refresh_config_helpers "$BUILD_ROOT/libssh2"
-    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
+    ./configure --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-examples-build \
         --with-openssl
     touch .configured
@@ -323,7 +324,7 @@ if [ ! -f .configured ]; then
     # jemalloc's configure probes for a working `je_` prefix and for the page
     # size; on iOS both are answered rather than detected.
     refresh_config_helpers "$BUILD_ROOT/jemalloc"
-    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
+    ./configure --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-stats \
         je_cv_force_defined_je_prefix=no
     touch .configured
@@ -346,7 +347,7 @@ CA_BUNDLE="/usr/share/aria2/ca-bundle.crt"
 if [ ! -f .configured ]; then
     refresh_config_helpers "$ARIA2_SRC"
     ./configure \
-        --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" \
+        --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" \
         --with-libz \
         --with-libcares \
