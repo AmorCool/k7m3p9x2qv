@@ -20,7 +20,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # `contents: write` is needed to attach the built binaries to a release.
+  # Artifacts and release assets are governed by separate quotas: the artifact
+  # store is small and shared across the account, and it filled up after the
+  # first successful Windows build. The release assets are what the app is
+  # actually going to consume, so they are attached there and the artifact
+  # upload is treated as best effort.
+  contents: write
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -84,12 +90,37 @@ jobs:
           strings "$EXE" | grep -q 'max-connection-per-server'
           strings "$EXE" | grep -q 'retry-on-400'
 
-      - name: Upload
+      - name: Stage
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp build/windows/${{ matrix.arch }}/aria2c.exe \
+             dist/aria2c-${{ matrix.arch }}.exe
+
+      # Best effort. When the account's artifact quota is exhausted this step
+      # fails the job even though the binary is fine, so it must not be allowed
+      # to decide the outcome -- the release step below is the real delivery.
+      - name: Upload artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: aria2-windows-${{ matrix.arch }}
-          path: build/windows/${{ matrix.arch }}/aria2c.exe
-          if-no-files-found: error
+          path: dist/aria2c-${{ matrix.arch }}.exe
+          if-no-files-found: warn
+
+      - name: Attach to release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="build-${{ github.run_number }}-${{ matrix.arch }}"
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "aria2c cross-build ${{ github.run_number }}" \
+            --notes "Windows and iOS binaries built from $GITHUB_SHA." \
+            || true
+          gh release upload "$tag" dist/aria2c-${{ matrix.arch }}.exe --clobber
 
   # ---------------------------------------------------------------------------
   # iOS: Xcode toolchain, device + simulator
@@ -149,12 +180,37 @@ jobs:
           strings "$OUT/aria2c" | grep -q 'max-connection-per-server'
           strings "$OUT/aria2c" | grep -q 'retry-on-400'
 
-      - name: Upload
+      - name: Stage
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp build/ios/${{ matrix.sdk }}/aria2c dist/aria2c-ios-${{ matrix.name }}
+          cp build/ios/${{ matrix.sdk }}/libaria2.a dist/libaria2-ios-${{ matrix.name }}.a
+
+      - name: Upload artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: aria2-ios-${{ matrix.name }}
           path: |
-            build/ios/${{ matrix.sdk }}/aria2c
-            build/ios/${{ matrix.sdk }}/libaria2.a
+            dist/aria2c-ios-${{ matrix.name }}
+            dist/libaria2-ios-${{ matrix.name }}.a
             build-${{ matrix.name }}.log
-          if-no-files-found: error
+          if-no-files-found: warn
+
+      - name: Attach to release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="build-${{ github.run_number }}-${{ matrix.name }}"
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "aria2c cross-build ${{ github.run_number }}" \
+            --notes "Windows and iOS binaries built from $GITHUB_SHA." \
+            || true
+          gh release upload "$tag" \
+            dist/aria2c-ios-${{ matrix.name }} \
+            dist/libaria2-ios-${{ matrix.name }}.a \
+            --clobber
