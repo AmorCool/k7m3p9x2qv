@@ -158,28 +158,34 @@ if [ ! -f .configured ]; then
 fi
 do_build c-ares
 
-# OpenSSL: --cross-compile-prefix is the part that matters.
+# OpenSSL is built in a subshell with the toolchain variables cleared.
 #
-# It is also the one dependency that must not inherit the exported CC/AR/etc.
-# Its Configure builds tool names as `$(CROSS_COMPILE)$(CC)`, so a prefixed CC
-# from the environment turns `x86_64-w64-mingw32-gcc` into
-# `x86_64-w64-mingw32-x86_64-w64-mingw32-gcc`. Configure succeeds either way
-# and the failure only appears once `make` starts, which is why it is worth
-# clearing them here rather than trusting the caller.
-mkdir -p "$BUILD_ROOT/openssl" && cd "$BUILD_ROOT/openssl"
-fetch "$BUILD_ROOT/openssl" "$OPENSSL"
-if [ ! -f .configured ]; then
-    env -u CC -u CXX -u AR -u RANLIB -u STRIP -u LD \
+# It is the one dependency that must not inherit the exported CC/AR/etc. Its
+# Configure composes tool names as `$(CROSS_COMPILE)$(CC)` and reads CC from
+# the environment on every make invocation, so handing it both a prefixed CC
+# and --cross-compile-prefix builds the name twice:
+#
+#     x86_64-w64-mingw32-x86_64-w64-mingw32-gcc: not found
+#
+# Configure succeeds either way and the error only appears once compilation
+# starts. A subshell is used rather than clearing the variables on each
+# command, so there is no list to keep in sync and nothing to forget.
+(
+    mkdir -p "$BUILD_ROOT/openssl" && cd "$BUILD_ROOT/openssl"
+    fetch "$BUILD_ROOT/openssl" "$OPENSSL"
+    unset CC CXX AR RANLIB STRIP LD
+    if [ ! -f .configured ]; then
         ./Configure \
-        --cross-compile-prefix="${HOST_TRIPLE}-" \
-        --prefix="$PREFIX" \
-        no-shared no-tests \
-        "$OPENSSL_TARGET"
-    touch .configured
-fi
-echo "==> build openssl"
-make -j"$JOBS" >/dev/null
-make install_sw >/dev/null
+            --cross-compile-prefix="${HOST_TRIPLE}-" \
+            --prefix="$PREFIX" \
+            no-shared no-tests \
+            "$OPENSSL_TARGET"
+        touch .configured
+    fi
+    echo "==> build openssl"
+    make -j"$JOBS" >/dev/null
+    make install_sw >/dev/null
+)
 
 mkdir -p "$BUILD_ROOT/sqlite3" && cd "$BUILD_ROOT/sqlite3"
 fetch "$BUILD_ROOT/sqlite3" "$SQLITE3"
