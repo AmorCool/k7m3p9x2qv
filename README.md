@@ -82,8 +82,8 @@ Upstream's `mingw-config` builds with `--without-openssl`, which leaves the
 binary unable to fetch HTTPS. This fork needs HTTPS, so OpenSSL is built and
 enabled. That is the one departure from their recipe.
 
-jemalloc is skipped on Windows: it needs mmap and a POSIX VM layer it does not
-have there. aria2 builds without it.
+jemalloc is skipped on Windows and on iOS. The reason is shared and is given
+under iOS below: its symbol prefix, not a missing POSIX layer.
 
 ### iOS
 
@@ -110,10 +110,31 @@ Most dependencies only include libc headers and keep working, so it surfaces
 late and reads as a broken toolchain.
 
 OpenSSL uses its `iphoneos-cross` preset with `no-asm`, because the perlasm
-output is not compatible with the arm64 Darwin ABI. jemalloc is included here,
-unlike Windows.
+output is not compatible with the arm64 Darwin ABI.
 
-Five things about the iOS build are worth knowing before changing it:
+jemalloc is not built here, nor on Windows, and the reason is not the POSIX
+layer — iOS has one. jemalloc's configure picks a default symbol prefix from
+the object format:
+
+```
+if abi != macho and abi != pecoff:  JEMALLOC_PREFIX=""     # exports malloc
+else:                               JEMALLOC_PREFIX="je_"   # exports je_malloc
+```
+
+Only the unprefixed form is useful to aria2, which never calls a jemalloc
+function — there is no reference to jemalloc anywhere under `src/`. It relies
+on the linker resolving `malloc` to jemalloc's copy, and the prefix prevents
+that. aria2 checks for exactly that form and fails configure without it:
+
+```
+configure: error: jemalloc (unprefixed) is requested but not found in the system.
+```
+
+Forcing an empty prefix would pass the check and is the wrong answer: the
+prefix exists on these platforms so a bundled allocator does not displace the
+system one, and replacing `malloc` on iOS is not supported.
+
+Six things about the iOS build are worth knowing before changing it:
 
 - **No bitcode.** `-fembed-bitcode-marker` makes the linker believe
   `ENABLE_BITCODE` is on, which collides with OpenSSL's provider modules —
@@ -133,6 +154,11 @@ Five things about the iOS build are worth knowing before changing it:
   the library with it. The library target is built directly.
 - **The deployment target must not exceed the SDK.** See above — the failure it
   causes names `math.h`, not the deployment target.
+- **A build system that rewrites `CFLAGS` drops the sysroot.** jemalloc's
+  configure assigns to `CFLAGS`, discarding the exported value, and its
+  `*.sym.o` targets call `$(CC)` with no `CFLAGS` at all. For such a package
+  the sysroot has to go into `CC`, where it is part of the command. This is
+  recorded rather than fixed, because nothing here builds jemalloc now.
 
 ### Linux
 

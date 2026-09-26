@@ -209,9 +209,22 @@ if [ ! -f .configured ]; then
 fi
 do_build libssh2
 
-# jemalloc has no Windows port: it needs mmap and a POSIX VM layer. aria2
-# builds without it; the allocator is a performance choice, not a requirement.
-echo "==> skipping jemalloc on Windows (unsupported)"
+# jemalloc is not built for Windows, and not for iOS either.
+#
+# The decisive reason is the symbol prefix, not the platform. jemalloc's
+# configure picks its default from the object format, and mingw is `pecoff`:
+#
+#     if abi != macho and abi != pecoff:  JEMALLOC_PREFIX=""
+#     else:                               JEMALLOC_PREFIX="je_"
+#
+# so it would export `je_malloc` rather than `malloc`. aria2 never calls a
+# jemalloc function; it relies on the linker resolving `malloc` to jemalloc's
+# copy, and asks configure for that form explicitly with
+# AC_CHECK_LIB([jemalloc], [malloc]). The prefixed build fails that check.
+#
+# Its autotools build is also not a supported Windows port. Either way the
+# allocator is a performance choice, not a requirement.
+echo "==> skipping jemalloc (the unprefixed allocator is unavailable on pecoff)"
 
 # ---------------------------------------------------------------------------
 # aria2

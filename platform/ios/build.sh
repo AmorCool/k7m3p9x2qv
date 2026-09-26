@@ -44,15 +44,20 @@ SDK_PATH="$(xcrun -sdk "$SDK" -show-sdk-path)"
 
 # The deployment target is clamped to the SDK on the machine.
 #
-# Declaring 18.0 against an SDK of 17.5 is not a request clang can honour, and
-# it does not say so: it stops applying the sysroot, and the first dependency
-# that includes a header only the SDK provides fails with
+# Declaring 18.0 against an SDK of 17.5 is not a request that can be honoured,
+# and it does not fail where it is written: clang accepts the flag and stops
+# applying the sysroot, so the error surfaces later in whichever dependency
+# first includes a header only the SDK provides. Clamping keeps the target
+# satisfiable and the sysroot in force.
+#
+# This was originally written to explain a jemalloc failure reading
 #
 #     include/jemalloc/internal/jemalloc_internal_decls.h:4:10:
 #         fatal error: 'math.h' file not found
 #
-# which reads as a broken toolchain. Dependencies that only include libc
-# headers keep working, so the failure appears late and looks unrelated.
+# and it did not explain it -- the clamp was in place and the header was still
+# missing. That cause is recorded with the dependency list below. The clamp is
+# kept because a target ahead of the SDK is wrong on its own terms.
 #
 # The clamp uses the SDK's own major and minor versions, so a newer Xcode
 # raises the target automatically. Set IPHONEOS_DEPLOYMENT_TARGET to override,
@@ -155,9 +160,47 @@ source "$ROOT_DIR/dependences"
 # ---------------------------------------------------------------------------
 # Dependencies
 #
-# Same versions as the Linux builds. jemalloc is included here (unlike
-# Windows): iOS has the POSIX VM layer it needs, and the allocator matters
-# more on a phone than on a desktop.
+# Same versions as the Linux builds, except jemalloc.
+#
+# jemalloc is not built here, for the same reason it is not built on Windows.
+# It is not a missing POSIX layer -- iOS has one. It is the symbol prefix.
+#
+# jemalloc's configure chooses a default prefix from the object format:
+#
+#     if abi != macho and abi != pecoff:  JEMALLOC_PREFIX=""
+#     else:                               JEMALLOC_PREFIX="je_"
+#
+# so on Linux it exports `malloc` and on iOS and Windows it exports
+# `je_malloc`. The unprefixed form is the one that matters: aria2 never calls
+# a jemalloc function (there is no reference to jemalloc anywhere in src/), it
+# relies on the linker resolving `malloc` to jemalloc's copy. With the prefix
+# in place that never happens, and linking -ljemalloc produces a binary that
+# allocates through libSystem while carrying jemalloc's code as dead weight.
+#
+# aria2 asks for the unprefixed form explicitly -- AC_CHECK_LIB([jemalloc],
+# [malloc]) -- and fails configure when it is absent:
+#
+#     configure: error: jemalloc (unprefixed) is requested but not found
+#
+# Forcing an empty prefix would satisfy that check, and is the wrong answer:
+# the prefix exists on these platforms precisely so that a bundled allocator
+# does not displace the system one, and on iOS replacing malloc is not
+# supported. The allocator is a performance choice, not a requirement, so it
+# is dropped rather than forced.
+#
+# Two failures were found here before the prefix one, and both were the same
+# mistake in different clothing, so they are worth stating:
+#
+#   * jemalloc's configure assigns to CFLAGS, discarding the exported value.
+#     The -isysroot from this script never reached its compile lines, and the
+#     missing math.h above was read as a broken toolchain. Any build system
+#     that rewrites CFLAGS needs the sysroot in CC instead, where it is part
+#     of the command and cannot be dropped.
+#   * Its symbol-renaming targets (`*.sym.o`) invoke `$(CC)` with no CFLAGS at
+#     all, which is the same problem for the same files.
+#
+# Both are moot while jemalloc is not built. They are recorded for whoever
+# finds a reason to add it back.
 # ---------------------------------------------------------------------------
 
 # Download and unpack a dependency.
@@ -377,39 +420,8 @@ if [ ! -f .configured ]; then
 fi
 do_build libssh2
 
-mkdir -p "$BUILD_ROOT/jemalloc" && cd "$BUILD_ROOT/jemalloc"
-fetch "$BUILD_ROOT/jemalloc" "$JEMALLOC"
-if [ ! -f .configured ]; then
-    # jemalloc's configure probes for a working `je_` prefix and for the page
-    # size; on iOS both are answered rather than detected.
-    refresh_config_helpers "$BUILD_ROOT/jemalloc"
-    # The sysroot goes into CC rather than relying on the exported CFLAGS.
-    #
-    # jemalloc's configure assigns to CFLAGS itself, which discards whatever
-    # the environment set, so the -isysroot from the top of this script does
-    # not reach the compile lines. The failure is `'math.h' file not found`
-    # from a header that only the SDK provides, and it looks like a broken
-    # toolchain -- every other dependency builds, because they do not
-    # overwrite CFLAGS.
-    #
-    # Putting the flag in CC makes it part of the compiler command, which no
-    # build system can drop.
-    CC="$CC_BIN -arch $ARCH -isysroot $SDK_PATH $PLATFORM_FLAGS" \
-    CXX="$CXX_BIN -arch $ARCH -isysroot $SDK_PATH $PLATFORM_FLAGS" \
-    ./configure --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
-        --enable-static --disable-shared --disable-stats \
-        je_cv_force_defined_je_prefix=no
-    touch .configured
-fi
-echo "==> build jemalloc"
-# Show the command that will be used, so a failure names its own cause instead
-# of leaving the next reader to infer it from a missing header.
-make -n src/jemalloc.sym.o 2>/dev/null | tail -1 || true
-# make reads the environment too, so the same CC is supplied again.
-CC="$CC_BIN -arch $ARCH -isysroot $SDK_PATH $PLATFORM_FLAGS" \
-CXX="$CXX_BIN -arch $ARCH -isysroot $SDK_PATH $PLATFORM_FLAGS" \
-    make -j"$JOBS" >/dev/null
-make install >/dev/null
+# jemalloc has no usable form here; see the note above the dependency list.
+echo "==> skipping jemalloc (the unprefixed allocator is unavailable on macho)"
 
 # ---------------------------------------------------------------------------
 # aria2
@@ -438,7 +450,7 @@ if [ ! -f .configured ]; then
         --without-libgmp \
         --with-libssh2 \
         --with-sqlite3 \
-        --with-jemalloc \
+        --without-jemalloc \
         --with-ca-bundle="$CA_BUNDLE" \
         ARIA2_STATIC=yes \
         --disable-shared \
