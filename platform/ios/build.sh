@@ -85,14 +85,30 @@ export ac_cv_func_getaddrinfo="yes"
 export ac_cv_func_gethostbyname="yes"
 export ac_cv_func_strcasecmp="yes"
 export ac_cv_func_working_mktime="yes"
-# The machine this runs on, for --build. Autoconf compares it against --host to
-# decide whether it is cross-compiling at all; leaving it unset on a Mac makes
-# it guess, and a wrong guess here means configure tries to run the test
-# programs it cannot run.
+# The machine this runs on, for --build.
 #
-# Note this is the *build* machine, not the target: it must not carry the
-# target arch, or configure concludes the two match and stops cross-compiling.
-BUILD_TRIPLE="$(uname -m)-apple-darwin"
+# Autoconf decides whether it is cross-compiling by comparing --build against
+# --host, and if the two look alike it tries to *run* the test programs it has
+# just compiled. Those programs are Mach-O output for an iPhone, so running them
+# fails and configure reports
+#
+#     configure: error: cannot run C compiled programs
+#
+# which reads as a broken compiler rather than as a mismatched pair of triples.
+#
+# The value must therefore differ from "$ARCH-apple-darwin". `uname -m` alone
+# is not usable for this: on Apple Silicon it answers `arm64`, which is the same
+# architecture the target uses, so the two triples compare equal and
+# cross-compiling is switched off. Translating it to the canonical name gives
+# `aarch64-apple-darwin`, which autoconf accepts and which is deliberately a
+# different string from the --host value. Doing the translation here rather
+# than shelling out to config.guess keeps it independent of whether automake
+# has been installed yet.
+case "$(uname -m)" in
+    arm64)  BUILD_TRIPLE="aarch64-apple-darwin" ;;
+    x86_64) BUILD_TRIPLE="x86_64-apple-darwin" ;;
+    *)      BUILD_TRIPLE="$(uname -m)-apple-darwin" ;;
+esac
 
 echo "==> aria2 $ARIA2_VERSION for $SDK ($ARCH)"
 echo "    sdk:        $SDK_PATH"
