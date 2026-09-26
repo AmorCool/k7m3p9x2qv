@@ -383,13 +383,32 @@ if [ ! -f .configured ]; then
     # jemalloc's configure probes for a working `je_` prefix and for the page
     # size; on iOS both are answered rather than detected.
     refresh_config_helpers "$BUILD_ROOT/jemalloc"
+    # The sysroot goes into CC rather than relying on the exported CFLAGS.
+    #
+    # jemalloc's configure assigns to CFLAGS itself, which discards whatever
+    # the environment set, so the -isysroot from the top of this script does
+    # not reach the compile lines. The failure is `'math.h' file not found`
+    # from a header that only the SDK provides, and it looks like a broken
+    # toolchain -- every other dependency builds, because they do not
+    # overwrite CFLAGS.
+    #
+    # Putting the flag in CC makes it part of the compiler command, which no
+    # build system can drop.
+    CC="$CC_BIN -arch $ARCH -isysroot $SDK_PATH $PLATFORM_FLAGS" \
+    CXX="$CXX_BIN -arch $ARCH -isysroot $SDK_PATH $PLATFORM_FLAGS" \
     ./configure --host="$ARCH-apple-ios" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-stats \
         je_cv_force_defined_je_prefix=no
     touch .configured
 fi
 echo "==> build jemalloc"
-make -j"$JOBS" >/dev/null
+# Show the command that will be used, so a failure names its own cause instead
+# of leaving the next reader to infer it from a missing header.
+make -n src/jemalloc.sym.o 2>/dev/null | tail -1 || true
+# make reads the environment too, so the same CC is supplied again.
+CC="$CC_BIN -arch $ARCH -isysroot $SDK_PATH $PLATFORM_FLAGS" \
+CXX="$CXX_BIN -arch $ARCH -isysroot $SDK_PATH $PLATFORM_FLAGS" \
+    make -j"$JOBS" >/dev/null
 make install >/dev/null
 
 # ---------------------------------------------------------------------------
