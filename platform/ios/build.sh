@@ -61,7 +61,17 @@ case "$SDK" in
     *) echo "unknown sdk: $SDK" >&2; exit 1 ;;
 esac
 
-export CFLAGS="$TRIPLE_CFLAGS $PLATFORM_FLAGS -O2 -fembed-bitcode-marker"
+# No -fembed-bitcode. It is not needed for a static library, and the marker
+# form makes the linker believe ENABLE_BITCODE is on, which collides with
+# anything built as a loadable bundle:
+#
+#     ld: -bundle and -bitcode_bundle (Xcode setting ENABLE_BITCODE=YES)
+#         cannot be used together
+#
+# That is exactly what OpenSSL's provider modules are, so the flag turned a
+# library build into a link failure at the last step. Bitcode itself is
+# deprecated from Xcode 14 onwards.
+export CFLAGS="$TRIPLE_CFLAGS $PLATFORM_FLAGS -O2"
 export CXXFLAGS="$CFLAGS"
 export LDFLAGS="$TRIPLE_CFLAGS $PLATFORM_FLAGS"
 
@@ -276,20 +286,22 @@ if [ ! -f .configured ]; then
     export CROSS_TOP CROSS_SDK
     export CROSS_COMPILE=""
     if [ "$SDK" = "iphoneos" ]; then
-        ./Configure iphoneos-cross no-asm no-shared no-tests no-docs -DL_ENDIAN \
-            --prefix="$PREFIX"
+        ./Configure iphoneos-cross no-asm no-shared no-tests no-docs no-module \
+            -DL_ENDIAN --prefix="$PREFIX"
     else
-        ./Configure iossimulator-xcrun no-asm no-shared no-tests no-docs -DL_ENDIAN \
-            --prefix="$PREFIX"
+        ./Configure iossimulator-xcrun no-asm no-shared no-tests no-docs no-module \
+            -DL_ENDIAN --prefix="$PREFIX"
     fi
     touch .configured
 fi
 echo "==> build openssl"
-# `build_libs` is the OpenSSL 3.x target that builds libcrypto and libssl and
-# skips the command-line tools. Those tools cannot be built for iOS anyway --
-# they would be executables for a platform that cannot run them here -- so
-# asking for just the libraries avoids a failure that has nothing to do with
-# the library we want.
+# `build_libs` is the OpenSSL 3.x target that builds libcrypto and libssl.
+#
+# It is paired with `no-module` because the providers are built as loadable
+# bundles (`.dylib`), and a bundle cannot be linked on this toolchain -- it
+# fails with "-bundle and -bitcode_bundle cannot be used together" and takes
+# the whole build with it. The static libraries aria2 links against do not
+# need the providers, and `no-module` is the supported way to leave them out.
 make -j"$JOBS" build_libs >/dev/null
 make install_sw >/dev/null
 
