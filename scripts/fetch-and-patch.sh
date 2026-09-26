@@ -70,10 +70,25 @@ apply_patch() {
 
 # Order matters only in that all of them must land. Independent hunks, but
 # 0001 and 0004 both edit OptionHandlerFactory.cc, so line offsets shift.
+#
+# These four are the set the reference Turbo build applies, and they are applied
+# unconditionally so that a binary from here behaves like one from there.
 apply_patch "$PATCH_DIR/0001-options-unlock-connection-per-server-limit.patch"
 apply_patch "$PATCH_DIR/0002-download-retry-on-slow-speed-and-reset.patch"
 apply_patch "$PATCH_DIR/0003-option-add-option-to-retry-on-http-4xx.patch"
 apply_patch "$PATCH_DIR/0004-option-set-no-want-digest-header-default-to-true.patch"
-apply_patch "$PATCH_DIR/0005-options-raise-the-split-default.patch"
+
+# 0005 is not part of that set. It raises the stock defaults (split 5 -> 32 and
+# min-split-size 20M -> 1M) so that the unlocked ceilings are used without the
+# user configuring anything first, which is a behaviour change rather than a
+# bug fix and is therefore opt-in:
+#
+#     TURBO_DEFAULTS=1 scripts/fetch-and-patch.sh 1.37.0 /tmp/aria2
+#
+# Left off, the defaults are upstream's and only the ceilings differ -- the
+# same thing the reference build ships.
+if [ "${TURBO_DEFAULTS:-0}" = "1" ]; then
+    apply_patch "$PATCH_DIR/0005-options-raise-the-split-default.patch"
+fi
 
 echo "==> patched"
