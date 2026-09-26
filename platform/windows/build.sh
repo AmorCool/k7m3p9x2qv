@@ -119,44 +119,48 @@ do_build() {
 # zlib has no --host support; it reads the toolchain from these variables.
 mkdir -p "$BUILD_ROOT/zlib" && cd "$BUILD_ROOT/zlib"
 fetch "$BUILD_ROOT/zlib" "$ZLIB"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure \
         --prefix="$PREFIX" \
         --libdir="$PREFIX/lib" \
         --includedir="$PREFIX/include" \
         --static
+    touch .configured
 fi
 do_build zlib
 
 mkdir -p "$BUILD_ROOT/expat" && cd "$BUILD_ROOT/expat"
 fetch "$BUILD_ROOT/expat" "$EXPAT"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure --host="$HOST_TRIPLE" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" --disable-shared --enable-static \
         --without-examples --without-tests --without-docbook
+    touch .configured
 fi
 do_build expat
 
 # Winsock has to be named explicitly; the configure link test does not find it.
 mkdir -p "$BUILD_ROOT/c-ares" && cd "$BUILD_ROOT/c-ares"
 fetch "$BUILD_ROOT/c-ares" "$C_ARES"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure --host="$HOST_TRIPLE" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" --disable-shared --enable-static \
         --disable-tests --without-random \
         LIBS="-lws2_32"
+    touch .configured
 fi
 do_build c-ares
 
 # OpenSSL: --cross-compile-prefix is the part that matters.
 mkdir -p "$BUILD_ROOT/openssl" && cd "$BUILD_ROOT/openssl"
 fetch "$BUILD_ROOT/openssl" "$OPENSSL"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./Configure \
         --cross-compile-prefix="${HOST_TRIPLE}-" \
         --prefix="$PREFIX" \
         no-shared no-tests \
         "$OPENSSL_TARGET"
+    touch .configured
 fi
 echo "==> build openssl"
 make -j"$JOBS" >/dev/null
@@ -164,21 +168,23 @@ make install_sw >/dev/null
 
 mkdir -p "$BUILD_ROOT/sqlite3" && cd "$BUILD_ROOT/sqlite3"
 fetch "$BUILD_ROOT/sqlite3" "$SQLITE3"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure --host="$HOST_TRIPLE" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" --disable-shared --enable-static \
         --disable-dynamic-extensions
+    touch .configured
 fi
 do_build sqlite3
 
 # --with-crypto=wincng keeps libssh2 on the Windows crypto API.
 mkdir -p "$BUILD_ROOT/libssh2" && cd "$BUILD_ROOT/libssh2"
 fetch "$BUILD_ROOT/libssh2" "$LIBSSH2"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure --host="$HOST_TRIPLE" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" --disable-shared --enable-static \
         --disable-examples-build --with-crypto=wincng \
         LIBS="-lws2_32"
+    touch .configured
 fi
 do_build libssh2
 
@@ -193,7 +199,7 @@ echo "==> skipping jemalloc on Windows (unsupported)"
 "$ROOT_DIR/scripts/fetch-and-patch.sh" "$ARIA2_VERSION" "$ARIA2_SRC"
 cd "$ARIA2_SRC"
 
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure \
         --host="$HOST_TRIPLE" \
         --build="$BUILD_TRIPLE" \
@@ -218,6 +224,7 @@ if [ ! -f Makefile ]; then
         --enable-static \
         CPPFLAGS="-I$PREFIX/include" \
         LDFLAGS="-L$PREFIX/lib"
+    touch .configured
 fi
 
 echo "==> build aria2c.exe"

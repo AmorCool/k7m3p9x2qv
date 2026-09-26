@@ -135,25 +135,28 @@ do_build() {
 
 mkdir -p "$BUILD_ROOT/zlib" && cd "$BUILD_ROOT/zlib"
 fetch "$BUILD_ROOT/zlib" "$ZLIB"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure --prefix="$PREFIX" --static
+    touch .configured
 fi
 do_build zlib
 
 mkdir -p "$BUILD_ROOT/expat" && cd "$BUILD_ROOT/expat"
 fetch "$BUILD_ROOT/expat" "$EXPAT"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
         --enable-static --disable-shared --without-examples --without-tests \
         --without-docbook
+    touch .configured
 fi
 do_build expat
 
 mkdir -p "$BUILD_ROOT/c-ares" && cd "$BUILD_ROOT/c-ares"
 fetch "$BUILD_ROOT/c-ares" "$C_ARES"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-tests
+    touch .configured
 fi
 do_build c-ares
 
@@ -163,7 +166,7 @@ do_build c-ares
 # compatible with the arm64 Darwin ABI. `no-shared` keeps it a .a.
 mkdir -p "$BUILD_ROOT/openssl" && cd "$BUILD_ROOT/openssl"
 fetch "$BUILD_ROOT/openssl" "$OPENSSL"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     CROSS_TOP="$(dirname "$(dirname "$SDK_PATH")")"
     CROSS_SDK="$(basename "$SDK_PATH")"
     export CROSS_TOP CROSS_SDK
@@ -175,6 +178,7 @@ if [ ! -f Makefile ]; then
         ./Configure iossimulator-xcrun no-asm no-shared no-tests no-docs -DL_ENDIAN \
             --prefix="$PREFIX"
     fi
+    touch .configured
 fi
 echo "==> build openssl"
 # build_libs skips the apps, which cannot be built for iOS anyway.
@@ -183,28 +187,31 @@ make install_sw >/dev/null
 
 mkdir -p "$BUILD_ROOT/sqlite3" && cd "$BUILD_ROOT/sqlite3"
 fetch "$BUILD_ROOT/sqlite3" "$SQLITE3"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-dynamic-extensions
+    touch .configured
 fi
 do_build sqlite3
 
 mkdir -p "$BUILD_ROOT/libssh2" && cd "$BUILD_ROOT/libssh2"
 fetch "$BUILD_ROOT/libssh2" "$LIBSSH2"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-examples-build
+    touch .configured
 fi
 do_build libssh2
 
 mkdir -p "$BUILD_ROOT/jemalloc" && cd "$BUILD_ROOT/jemalloc"
 fetch "$BUILD_ROOT/jemalloc" "$JEMALLOC"
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     # jemalloc's configure probes for a working `je_` prefix and for the page
     # size; on iOS both are answered rather than detected.
     ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-stats \
         je_cv_force_defined_je_prefix=no
+    touch .configured
 fi
 echo "==> build jemalloc"
 make -j"$JOBS" >/dev/null
@@ -221,7 +228,7 @@ cd "$ARIA2_SRC"
 # is no system store to point at, so it names the copy the app ships.
 CA_BUNDLE="/usr/share/aria2/ca-bundle.crt"
 
-if [ ! -f Makefile ]; then
+if [ ! -f .configured ]; then
     ./configure \
         --host="$ARCH-apple-darwin" \
         --prefix="$PREFIX" \
@@ -241,6 +248,7 @@ if [ ! -f Makefile ]; then
         ARIA2_STATIC=yes \
         --disable-shared \
         --enable-static
+    touch .configured
 fi
 
 echo "==> build aria2c"
