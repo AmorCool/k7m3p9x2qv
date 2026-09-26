@@ -127,4 +127,33 @@ if [ -n "$PLATFORM_PATCH_DIR" ] && [ -d "$PLATFORM_PATCH_DIR" ]; then
     done
 fi
 
+# Patched configure.ac makes every generated autotools file look stale.
+#
+# The release tarball ships aclocal.m4, configure, config.h.in and the
+# Makefile.in files already generated, and each of them lists configure.ac among
+# its prerequisites. Patching configure.ac gives it a newer timestamp than all
+# of them, so make decides they need rebuilding and shells out to automake,
+# which the runner does not have in a matching version:
+#
+#     missing: line 81: aclocal-1.16: command not found
+#     make: *** [aclocal.m4] Error 127
+#
+# Touching them restores what is actually true -- the generated files match the
+# patched source, because the patches change behaviour and not the build
+# description. The order is the dependency order, oldest first, so that every
+# file ends up newer than the ones it is generated from:
+#
+#     aclocal.m4  <- configure.ac
+#     config.h.in <- aclocal.m4
+#     Makefile.in <- aclocal.m4
+#     configure   <- aclocal.m4
+refresh_generated() {
+    [ -e aclocal.m4 ] && touch aclocal.m4
+    [ -e config.h.in ] && touch config.h.in
+    find . -name 'Makefile.in' -exec touch {} +
+    [ -e configure ] && touch configure
+}
+
+refresh_generated
+
 echo "==> patched"
