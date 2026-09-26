@@ -65,11 +65,34 @@ export CFLAGS="$TRIPLE_CFLAGS $PLATFORM_FLAGS -O2 -fembed-bitcode-marker"
 export CXXFLAGS="$CFLAGS"
 export LDFLAGS="$TRIPLE_CFLAGS $PLATFORM_FLAGS"
 
-# autoconf's link tests need the same treatment or every configure check fails
-# with "cannot run C compiled programs" -- the binary is a Mach-O for a
-# different platform and the build host refuses to execute it.
+# autoconf answers that must be supplied rather than detected.
+#
+# configure decides these by compiling a test program and running it, which
+# cannot work here: the program is a Mach-O for a platform the build host will
+# not execute. Without an answer configure reports "cannot run C compiled
+# programs" and every check downstream fails, which reads as a broken
+# toolchain rather than as an unanswered question.
+#
+# These are the standard cross-compiling answers and match what the SDK
+# provides on iOS.
 export ac_cv_exeext=""
-export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+export ac_cv_file__dev_zero="yes"
+export ac_cv_func_setpgrp_void="yes"
+export ac_cv_func_malloc_0_nonnull="yes"
+export ac_cv_func_realloc_0_nonnull="yes"
+export ac_cv_working_alloca_h="yes"
+export ac_cv_func_getaddrinfo="yes"
+export ac_cv_func_gethostbyname="yes"
+export ac_cv_func_strcasecmp="yes"
+export ac_cv_func_working_mktime="yes"
+# The machine this runs on, for --build. Autoconf compares it against --host to
+# decide whether it is cross-compiling at all; leaving it unset on a Mac makes
+# it guess, and a wrong guess here means configure tries to run the test
+# programs it cannot run.
+#
+# Note this is the *build* machine, not the target: it must not carry the
+# target arch, or configure concludes the two match and stops cross-compiling.
+BUILD_TRIPLE="$(uname -m)-apple-darwin"
 
 echo "==> aria2 $ARIA2_VERSION for $SDK ($ARCH)"
 echo "    sdk:        $SDK_PATH"
@@ -133,6 +156,38 @@ do_build() {
     make install >/dev/null
 }
 
+# Point a dependency at a current config.sub/config.guess.
+#
+# Tarballs carry whatever config.sub their release was cut with, and the older
+# ones do not know `arm64-apple-darwin` -- sqlite3's is old enough to abort with
+#
+#     configure: error: /bin/sh ./config.sub arm64-apple-darwin failed
+#
+# before it does anything else. Refreshing the two helpers is the supported way
+# out and is cheaper than pinning a host triple the tree predates: the copy
+# that ships with the local automake knows every triple the local autoconf can
+# emit. Missing candidates are skipped rather than treated as an error, because
+# not every host packages them in the same place.
+refresh_config_helpers() {
+    local dir="$1" helper source
+    for helper in config.sub config.guess; do
+        [ -f "$dir/$helper" ] || continue
+        for source in \
+            "$(command -v "g$helper" 2>/dev/null)" \
+            "$(command -v "$helper" 2>/dev/null)" \
+            /opt/homebrew/share/automake*/"$helper" \
+            /usr/local/share/automake*/"$helper" \
+            /usr/share/automake*/"$helper"
+        do
+            if [ -n "$source" ] && [ -f "$source" ]; then
+                cp "$source" "$dir/$helper"
+                chmod +x "$dir/$helper"
+                break
+            fi
+        done
+    done
+}
+
 mkdir -p "$BUILD_ROOT/zlib" && cd "$BUILD_ROOT/zlib"
 fetch "$BUILD_ROOT/zlib" "$ZLIB"
 if [ ! -f .configured ]; then
@@ -144,7 +199,8 @@ do_build zlib
 mkdir -p "$BUILD_ROOT/expat" && cd "$BUILD_ROOT/expat"
 fetch "$BUILD_ROOT/expat" "$EXPAT"
 if [ ! -f .configured ]; then
-    ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
+    refresh_config_helpers "$BUILD_ROOT/expat"
+    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --without-examples --without-tests \
         --without-docbook
     touch .configured
@@ -154,47 +210,57 @@ do_build expat
 mkdir -p "$BUILD_ROOT/c-ares" && cd "$BUILD_ROOT/c-ares"
 fetch "$BUILD_ROOT/c-ares" "$C_ARES"
 if [ ! -f .configured ]; then
-    ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
+    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-tests
     touch .configured
 fi
 do_build c-ares
 
-# OpenSSL has its own configure. The one thing that must not be guessed is the
-# target name: `iphoneos-cross` is the preset that knows about the iOS SDK
-# layout, and `no-asm` is required because the perlasm output is not
-# compatible with the arm64 Darwin ABI. `no-shared` keeps it a .a.
+# OpenSSL for iOS.
 #
-# Note the option set is the 1.1.1 one. `no-docs` belongs to OpenSSL 3.x and
-# this Configure rejects it outright with "Unsupported options: no-docs",
-# which is a hard failure before a single file is compiled.
+# Version 3.3.x rather than the 1.1.1 the other targets use. 1.1.1 is
+# end-of-life, and its perlasm output does not build for arm64 Darwin without
+# the `no-asm` workaround; 3.x handles the platform better and is what an
+# iOS project on this toolchain is already using, so the flags below are the
+# ones known to work rather than ones inferred.
+#
+# `iphoneos-cross` is the preset that knows the iOS SDK layout, and it reads
+# CROSS_TOP/CROSS_SDK/CROSS_COMPILE from the environment. `no-asm` is kept
+# because it is the setting that has been exercised.
+#
+# `iossimulator-xcrun` is the matching preset for the simulator SDK.
+OPENSSL_IOS="${OPENSSL_IOS:-https://www.openssl.org/source/openssl-3.3.2.tar.gz}"
+
 mkdir -p "$BUILD_ROOT/openssl" && cd "$BUILD_ROOT/openssl"
-fetch "$BUILD_ROOT/openssl" "$OPENSSL"
+fetch "$BUILD_ROOT/openssl" "$OPENSSL_IOS"
 if [ ! -f .configured ]; then
     CROSS_TOP="$(dirname "$(dirname "$SDK_PATH")")"
     CROSS_SDK="$(basename "$SDK_PATH")"
     export CROSS_TOP CROSS_SDK
     export CROSS_COMPILE=""
     if [ "$SDK" = "iphoneos" ]; then
-        ./Configure iphoneos-cross no-asm no-shared no-tests -DL_ENDIAN \
+        ./Configure iphoneos-cross no-asm no-shared no-tests no-docs -DL_ENDIAN \
             --prefix="$PREFIX"
     else
-        ./Configure iossimulator-xcrun no-asm no-shared no-tests -DL_ENDIAN \
+        ./Configure iossimulator-xcrun no-asm no-shared no-tests no-docs -DL_ENDIAN \
             --prefix="$PREFIX"
     fi
     touch .configured
 fi
 echo "==> build openssl"
-# Plain `make`, not `make build_libs`: the latter is an OpenSSL 3.x target and
-# does not exist in 1.1.1. The test suite is already off (`no-tests`), so this
-# builds libcrypto/libssl and stops short of the apps on its own.
-make -j"$JOBS" >/dev/null
+# `build_libs` is the OpenSSL 3.x target that builds libcrypto and libssl and
+# skips the command-line tools. Those tools cannot be built for iOS anyway --
+# they would be executables for a platform that cannot run them here -- so
+# asking for just the libraries avoids a failure that has nothing to do with
+# the library we want.
+make -j"$JOBS" build_libs >/dev/null
 make install_sw >/dev/null
 
 mkdir -p "$BUILD_ROOT/sqlite3" && cd "$BUILD_ROOT/sqlite3"
 fetch "$BUILD_ROOT/sqlite3" "$SQLITE3"
 if [ ! -f .configured ]; then
-    ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
+    refresh_config_helpers "$BUILD_ROOT/sqlite3"
+    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-dynamic-extensions
     touch .configured
 fi
@@ -203,8 +269,13 @@ do_build sqlite3
 mkdir -p "$BUILD_ROOT/libssh2" && cd "$BUILD_ROOT/libssh2"
 fetch "$BUILD_ROOT/libssh2" "$LIBSSH2"
 if [ ! -f .configured ]; then
-    ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
-        --enable-static --disable-shared --disable-examples-build
+    # --with-openssl rather than the --with-crypto=wincng the Windows build
+    # uses: wincng routes libssh2 through the Windows crypto API, which does
+    # not exist here. Picking it explicitly avoids libssh2 selecting a backend
+    # by sniffing the host and getting it wrong during a cross-compile.
+    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
+        --enable-static --disable-shared --disable-examples-build \
+        --with-openssl
     touch .configured
 fi
 do_build libssh2
@@ -214,7 +285,7 @@ fetch "$BUILD_ROOT/jemalloc" "$JEMALLOC"
 if [ ! -f .configured ]; then
     # jemalloc's configure probes for a working `je_` prefix and for the page
     # size; on iOS both are answered rather than detected.
-    ./configure --host="$ARCH-apple-darwin" --prefix="$PREFIX" \
+    ./configure --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-stats \
         je_cv_force_defined_je_prefix=no
     touch .configured
@@ -236,7 +307,7 @@ CA_BUNDLE="/usr/share/aria2/ca-bundle.crt"
 
 if [ ! -f .configured ]; then
     ./configure \
-        --host="$ARCH-apple-darwin" \
+        --host="$ARCH-apple-darwin" --build="$BUILD_TRIPLE" \
         --prefix="$PREFIX" \
         --with-libz \
         --with-libcares \
