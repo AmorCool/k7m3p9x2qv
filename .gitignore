@@ -1,0 +1,7 @@
+# Build output. The whole point of the scripts is that these are reproducible,
+# so nothing here is committed.
+build/
+output/
+*.o
+*.a
+*.exe

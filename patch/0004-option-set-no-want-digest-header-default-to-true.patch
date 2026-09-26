@@ -1,0 +1,31 @@
+From 72cdac25880ee1d9d154c6e9fa87b90259de3c0f Mon Sep 17 00:00:00 2001
+From: Mintimate <mintimate215@gmail.com>
+Date: Mon, 17 Mar 2025 00:00:00 +0800
+Subject: [PATCH] option: set no-want-digest-header default to true
+
+Adapted by Mintimate <mintimate215@gmail.com> on 2026-03-17.
+
+Aria2 upstream has added the --no-want-digest-header option
+(default: false, i.e. Want-Digest header IS sent by default).
+This patch changes the default to true so that the Want-Digest
+HTTP header is NOT sent by default, avoiding potential issues
+with servers that don't support or mishandle this header.
+---
+ src/OptionHandlerFactory.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/OptionHandlerFactory.cc b/src/OptionHandlerFactory.cc
+index 000426b..7e30774 100644
+--- a/src/OptionHandlerFactory.cc
++++ b/src/OptionHandlerFactory.cc
+@@ -1205,7 +1205,7 @@ std::vector<OptionHandler*> OptionHandlerFactory::createOptionHandlers()
+   }
+   {
+     OptionHandler* op(new BooleanOptionHandler(
+-        PREF_NO_WANT_DIGEST_HEADER, TEXT_NO_WANT_DIGEST_HEADER, A2_V_FALSE,
++        PREF_NO_WANT_DIGEST_HEADER, TEXT_NO_WANT_DIGEST_HEADER, A2_V_TRUE,
+         OptionHandler::OPT_ARG));
+     op->addTag(TAG_HTTP);
+     op->setInitialOption(true);
+-- 
+2.39.5
