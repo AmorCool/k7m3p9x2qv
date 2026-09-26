@@ -18,26 +18,34 @@ behaviour rather than just fixing a build:
 | `0002` | three `DL_ABORT_EX` → `DL_RETRY_EX` | slow speed, dropped connection and TLS failure retry instead of aborting |
 | `0003` | new `--retry-on-400/403/406/unknown` | 4xx responses can be retried |
 | `0004` | `--no-want-digest-header` defaults to true | avoids servers that mishandle `Want-Digest` |
-| `0005` | `--split` default `5` → `32` | segments are actually used without editing settings first |
 
 Together these are what upstream calls a "Turbo" build: raise the parallelism
-ceiling, shrink the segment floor, and retry aggressively.
+ceiling, shrink the segment floor, and retry aggressively. They are the same
+four patches the reference Turbo package applies, byte for byte.
 
-`0005` is the only one added here rather than inherited. It raises a default
-instead of a limit, and it exists because the ceiling changes alone leave a
-fresh install downloading with one connection per server -- the values
-interact, so the defaults have to move with the limits or the unlocked
-behaviour is not reachable without editing three settings first. The values
-match what the widely used prebuilt unlimited builds ship.
+There is a fifth patch in `patch/` that is **not** applied by default:
 
-`max-connection-per-server` is deliberately left at its default of 1. It is a
-per-server count, and defaulting it high means every ordinary download opens
-that many sockets to one host whether or not it helps. The ceiling is what was
-blocking people; the default is a choice they can now make.
+| Patch | Change | When |
+|---|---|---|
+| `0005` | `--split` default `5` → `32`, `--min-split-size` default `20M` → `1M` | only with `TURBO_DEFAULTS=1` |
 
-They are plain C++ edits with no platform assumptions, so all three targets
-share them. Every build runs `scripts/fetch-and-patch.sh`, which fetches the
-pinned aria2 release and applies the four patches. Keeping the fetch and the
+The four that are always applied remove ceilings; `0005` moves defaults, which
+is a behaviour change rather than a bug fix. The reference build leaves the
+defaults alone, and a binary from here is supposed to behave like one from
+there, so the change is opt-in:
+
+```bash
+TURBO_DEFAULTS=1 scripts/fetch-and-patch.sh 1.37.0 /tmp/aria2
+```
+
+With it on, a fresh install downloads in parallel without being configured
+first. `max-connection-per-server` stays at 1 either way: it is a per-server
+count, and defaulting it high means every ordinary download opens that many
+sockets to one host whether or not it helps.
+
+The patches are plain C++ edits with no platform assumptions, so all three
+targets share them. Every build runs `scripts/fetch-and-patch.sh`, which
+fetches the pinned aria2 release and applies them. Keeping the fetch and the
 patch together is deliberate: a platform script that forgot one would still
 produce a working binary that behaved differently from the others.
 
@@ -101,6 +109,25 @@ OpenSSL uses its `iphoneos-cross` preset with `no-asm`, because the perlasm
 output is not compatible with the arm64 Darwin ABI. jemalloc is included here,
 unlike Windows.
 
+Four things about the iOS build are worth knowing before changing it:
+
+- **No bitcode.** `-fembed-bitcode-marker` makes the linker believe
+  `ENABLE_BITCODE` is on, which collides with OpenSSL's provider modules —
+  those are built as loadable bundles — and the build dies at the last step
+  with `-bundle and -bitcode_bundle cannot be used together`.
+- **`--host` must say `ios`.** Autoconf decides it is cross-compiling by
+  comparing `--host` against `--build`. Both are arm64 on an Apple Silicon
+  runner, so if `--host` is `arm64-apple-darwin` the two compare equal and
+  configure tries to *run* the Mach-O test programs. `--build` is therefore
+  translated to the canonical `aarch64-apple-darwin`.
+- **Old `config.sub` files.** Several dependencies ship one that predates
+  arm64 Darwin and abort on `arm64-apple-ios`. The build refreshes them from
+  the local automake, checking each candidate by running it rather than by
+  looking at it.
+- **sqlite's shell is not built.** It is in `bin_PROGRAMS`, calls `system()`,
+  and `system()` is unavailable on iOS, so the default target fails and takes
+  the library with it. The library target is built directly.
+
 ### Linux
 
 Unchanged from upstream:
@@ -141,6 +168,20 @@ performance difference later.
 The iOS job needs a macOS runner. It reads the label from the repository
 variable `IOS_RUNNER`, falling back to `macos-14`, because the Xcode version
 this project targets is not the one on the standard hosted image.
+
+Binaries are delivered as **release assets**, one release per job, tagged
+`build-<run>-<job>`. The workflow-artifact upload is best effort and cannot
+fail the job. That is not a preference: the account's artifact quota filled up,
+and the first Windows build that actually succeeded went red on the upload step
+while its binary sat there verified and unshipped. Release assets have their
+own quota and are what the consuming app downloads from.
+
+Fetch a binary into an app with:
+
+```bash
+node scripts/fetch-engine.js          # current platform
+node scripts/fetch-engine.js --list   # what is available
+```
 
 ## Licence
 
