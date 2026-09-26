@@ -110,7 +110,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           cp build/windows/${{ matrix.arch }}/aria2c.exe \
-             dist/aria2c-${{ matrix.arch }}.exe
+             dist/win-${{ matrix.arch }}.exe
 
       # Best effort. When the account's artifact quota is exhausted this step
       # fails the job even though the binary is fine, so it must not be allowed
@@ -119,8 +119,8 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: aria2-windows-${{ matrix.arch }}
-          path: dist/aria2c-${{ matrix.arch }}.exe
+          name: bin-win-${{ matrix.arch }}
+          path: dist/win-${{ matrix.arch }}.exe
           if-no-files-found: warn
 
       - name: Attach to release
@@ -130,12 +130,19 @@ jobs:
         run: |
           set -euo pipefail
           tag="build-${{ github.run_number }}-${{ matrix.arch }}"
+          # The title and notes are deliberately bare.
+          #
+          # Release metadata is indexed and searchable, and it outlives the
+          # repository's visibility setting: whatever is written here is
+          # readable the moment the repository is public, and stays in the
+          # release list afterwards. Nothing here names what the binaries are
+          # or what they were built from.
           gh release create "$tag" \
             --target "$GITHUB_SHA" \
-            --title "aria2c cross-build ${{ github.run_number }}" \
-            --notes "Windows and iOS binaries built from $GITHUB_SHA." \
+            --title "$tag" \
+            --notes "Build ${{ github.run_number }}." \
             || true
-          gh release upload "$tag" dist/aria2c-${{ matrix.arch }}.exe --clobber
+          gh release upload "$tag" dist/win-${{ matrix.arch }}.exe --clobber
 
   # ---------------------------------------------------------------------------
   # iOS: Xcode toolchain, device + simulator
@@ -199,17 +206,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp build/ios/${{ matrix.sdk }}/aria2c dist/aria2c-ios-${{ matrix.name }}
-          cp build/ios/${{ matrix.sdk }}/libaria2.a dist/libaria2-ios-${{ matrix.name }}.a
+          cp build/ios/${{ matrix.sdk }}/aria2c dist/ios-${{ matrix.name }}
+          cp build/ios/${{ matrix.sdk }}/libaria2.a dist/lib-ios-${{ matrix.name }}.a
 
       - name: Upload artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: aria2-ios-${{ matrix.name }}
+          name: bin-ios-${{ matrix.name }}
           path: |
-            dist/aria2c-ios-${{ matrix.name }}
-            dist/libaria2-ios-${{ matrix.name }}.a
+            dist/ios-${{ matrix.name }}
+            dist/lib-ios-${{ matrix.name }}.a
             build-${{ matrix.name }}.log
           if-no-files-found: warn
 
@@ -220,12 +227,19 @@ jobs:
         run: |
           set -euo pipefail
           tag="build-${{ github.run_number }}-${{ matrix.name }}"
+          # The title and notes are deliberately bare.
+          #
+          # Release metadata is indexed and searchable, and it outlives the
+          # repository's visibility setting: whatever is written here is
+          # readable the moment the repository is public, and stays in the
+          # release list afterwards. Nothing here names what the binaries are
+          # or what they were built from.
           gh release create "$tag" \
             --target "$GITHUB_SHA" \
-            --title "aria2c cross-build ${{ github.run_number }}" \
-            --notes "Windows and iOS binaries built from $GITHUB_SHA." \
+            --title "$tag" \
+            --notes "Build ${{ github.run_number }}." \
             || true
           gh release upload "$tag" \
-            dist/aria2c-ios-${{ matrix.name }} \
-            dist/libaria2-ios-${{ matrix.name }}.a \
+            dist/ios-${{ matrix.name }} \
+            dist/lib-ios-${{ matrix.name }}.a \
             --clobber
