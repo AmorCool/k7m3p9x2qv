@@ -50,6 +50,13 @@ PREFIX="$BUILD_ROOT/deps"
 OUT_DIR="$BUILD_ROOT"
 JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu)}"
 
+# The autoconf-based dependencies read the toolchain from these. OpenSSL is
+# the exception and must not see them: it derives the compiler as
+# `$(CROSS_COMPILE)$(CC)`, so handing it both a prefixed CC and a
+# --cross-compile-prefix builds the name twice
+# (`x86_64-w64-mingw32-x86_64-w64-mingw32-gcc`) and the build dies with
+# "not found" the moment OpenSSL starts compiling. Its own block below
+# unsets these and supplies the prefix exactly once.
 export CC="${HOST_TRIPLE}-gcc"
 export CXX="${HOST_TRIPLE}-g++"
 export AR="${HOST_TRIPLE}-ar"
@@ -152,10 +159,18 @@ fi
 do_build c-ares
 
 # OpenSSL: --cross-compile-prefix is the part that matters.
+#
+# It is also the one dependency that must not inherit the exported CC/AR/etc.
+# Its Configure builds tool names as `$(CROSS_COMPILE)$(CC)`, so a prefixed CC
+# from the environment turns `x86_64-w64-mingw32-gcc` into
+# `x86_64-w64-mingw32-x86_64-w64-mingw32-gcc`. Configure succeeds either way
+# and the failure only appears once `make` starts, which is why it is worth
+# clearing them here rather than trusting the caller.
 mkdir -p "$BUILD_ROOT/openssl" && cd "$BUILD_ROOT/openssl"
 fetch "$BUILD_ROOT/openssl" "$OPENSSL"
 if [ ! -f .configured ]; then
-    ./Configure \
+    env -u CC -u CXX -u AR -u RANLIB -u STRIP -u LD \
+        ./Configure \
         --cross-compile-prefix="${HOST_TRIPLE}-" \
         --prefix="$PREFIX" \
         no-shared no-tests \

@@ -164,6 +164,10 @@ do_build c-ares
 # target name: `iphoneos-cross` is the preset that knows about the iOS SDK
 # layout, and `no-asm` is required because the perlasm output is not
 # compatible with the arm64 Darwin ABI. `no-shared` keeps it a .a.
+#
+# Note the option set is the 1.1.1 one. `no-docs` belongs to OpenSSL 3.x and
+# this Configure rejects it outright with "Unsupported options: no-docs",
+# which is a hard failure before a single file is compiled.
 mkdir -p "$BUILD_ROOT/openssl" && cd "$BUILD_ROOT/openssl"
 fetch "$BUILD_ROOT/openssl" "$OPENSSL"
 if [ ! -f .configured ]; then
@@ -172,17 +176,19 @@ if [ ! -f .configured ]; then
     export CROSS_TOP CROSS_SDK
     export CROSS_COMPILE=""
     if [ "$SDK" = "iphoneos" ]; then
-        ./Configure iphoneos-cross no-asm no-shared no-tests no-docs -DL_ENDIAN \
+        ./Configure iphoneos-cross no-asm no-shared no-tests -DL_ENDIAN \
             --prefix="$PREFIX"
     else
-        ./Configure iossimulator-xcrun no-asm no-shared no-tests no-docs -DL_ENDIAN \
+        ./Configure iossimulator-xcrun no-asm no-shared no-tests -DL_ENDIAN \
             --prefix="$PREFIX"
     fi
     touch .configured
 fi
 echo "==> build openssl"
-# build_libs skips the apps, which cannot be built for iOS anyway.
-make -j"$JOBS" build_libs >/dev/null
+# Plain `make`, not `make build_libs`: the latter is an OpenSSL 3.x target and
+# does not exist in 1.1.1. The test suite is already off (`no-tests`), so this
+# builds libcrypto/libssl and stops short of the apps on its own.
+make -j"$JOBS" >/dev/null
 make install_sw >/dev/null
 
 mkdir -p "$BUILD_ROOT/sqlite3" && cd "$BUILD_ROOT/sqlite3"
