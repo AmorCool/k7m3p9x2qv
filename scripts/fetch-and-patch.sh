@@ -74,5 +74,6 @@ apply_patch "$PATCH_DIR/0001-options-unlock-connection-per-server-limit.patch"
 apply_patch "$PATCH_DIR/0002-download-retry-on-slow-speed-and-reset.patch"
 apply_patch "$PATCH_DIR/0003-option-add-option-to-retry-on-http-4xx.patch"
 apply_patch "$PATCH_DIR/0004-option-set-no-want-digest-header-default-to-true.patch"
+apply_patch "$PATCH_DIR/0005-options-raise-the-split-default.patch"
 
 echo "==> patched"

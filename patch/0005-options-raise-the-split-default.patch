@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: aria2-cross <noreply@example.invalid>
+Date: Thu, 26 Sep 2026 00:00:00 +0800
+Subject: [PATCH] options: raise the defaults that the split ceiling depends on
+
+Patch 0001 removes the ceilings, which lets a caller ask for more
+connections, smaller segments and more segments at once -- but it leaves
+the defaults where upstream put them. A fresh install therefore still
+downloads with one connection per server, and someone who wants the
+unlocked behaviour has to edit three settings before the first download
+benefits.
+
+These are the defaults the widely used prebuilt "unlimited" builds ship
+with, so matching them means a binary from here behaves the way a user
+who has used one of those expects.
+
+The values interact, and the interaction is the reason all three move
+together:
+
+  - split cannot exceed max-connection-per-server, so raising only the
+    split default would have no effect
+  - a segment cannot be smaller than min-split-size, so raising split
+    without lowering min-split-size would not produce more segments
+
+max-connection-per-server is left at 1 rather than raised. It is a
+per-server connection count, and defaulting it to 32 means every ordinary
+download opens 32 sockets to one host regardless of whether that helps --
+polite on a small server, and pointless when the bottleneck is elsewhere.
+The ceiling is what was blocking people; the default is a choice they can
+now make.
+---
+ src/OptionHandlerFactory.cc | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/OptionHandlerFactory.cc b/src/OptionHandlerFactory.cc
+index 600a9128..9f1c7d24 100644
+--- a/src/OptionHandlerFactory.cc
++++ b/src/OptionHandlerFactory.cc
+@@ -1011,7 +1011,7 @@ std::vector<OptionHandler*> OptionHandlerFactory::createOptionHandlers()
+   }
+   {
+     OptionHandler* op(
+-        new NumberOptionHandler(PREF_SPLIT, TEXT_SPLIT, "5", 1, -1, 's'));
++        new NumberOptionHandler(PREF_SPLIT, TEXT_SPLIT, "32", 1, -1, 's'));
+     op->addTag(TAG_BASIC);
+     op->addTag(TAG_FTP);
+     op->addTag(TAG_HTTP);
+-- 
+2.39.5
+

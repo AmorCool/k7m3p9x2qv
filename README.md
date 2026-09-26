@@ -18,9 +18,22 @@ behaviour rather than just fixing a build:
 | `0002` | three `DL_ABORT_EX` → `DL_RETRY_EX` | slow speed, dropped connection and TLS failure retry instead of aborting |
 | `0003` | new `--retry-on-400/403/406/unknown` | 4xx responses can be retried |
 | `0004` | `--no-want-digest-header` defaults to true | avoids servers that mishandle `Want-Digest` |
+| `0005` | `--split` default `5` → `32` | segments are actually used without editing settings first |
 
 Together these are what upstream calls a "Turbo" build: raise the parallelism
 ceiling, shrink the segment floor, and retry aggressively.
+
+`0005` is the only one added here rather than inherited. It raises a default
+instead of a limit, and it exists because the ceiling changes alone leave a
+fresh install downloading with one connection per server -- the values
+interact, so the defaults have to move with the limits or the unlocked
+behaviour is not reachable without editing three settings first. The values
+match what the widely used prebuilt unlimited builds ship.
+
+`max-connection-per-server` is deliberately left at its default of 1. It is a
+per-server count, and defaulting it high means every ordinary download opens
+that many sockets to one host whether or not it helps. The ceiling is what was
+blocking people; the default is a choice they can now make.
 
 They are plain C++ edits with no platform assumptions, so all three targets
 share them. Every build runs `scripts/fetch-and-patch.sh`, which fetches the
