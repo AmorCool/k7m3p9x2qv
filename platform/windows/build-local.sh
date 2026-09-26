@@ -159,7 +159,24 @@ echo "==> dependencies: $(pkg-config --modversion zlib) zlib, $(pkg-config --mod
 # ---------------------------------------------------------------------------
 # aria2: fetch and patch through the shared script, so this build applies the
 # same four Turbo patches as every other target and cannot drift from them.
+#
+# The sanity check before it is not redundant. fetch-and-patch.sh treats any
+# non-empty destination as already fetched, so a build that was interrupted
+# after unpacking but before configure leaves a tree it will happily skip, and
+# the failure that follows names none of this:
+#
+#     configure: error: sources are in ., but `cd .' does not work
+#     config.status: error: Something went wrong bootstrapping makefile
+#     fragments for automatic dependency tracking.
+#
+# src/Makefile.in is shipped by the tarball and is not generated, so its absence
+# means the tree is incomplete and the cheap answer is to fetch it again.
 # ---------------------------------------------------------------------------
+if [ -d "$ARIA2_SRC" ] && [ ! -f "$ARIA2_SRC/src/Makefile.in" ]; then
+    echo "==> $ARIA2_SRC is incomplete, discarding it and fetching again"
+    rm -rf "$ARIA2_SRC"
+fi
+
 "$ROOT_DIR/scripts/fetch-and-patch.sh" "$ARIA2_VERSION" "$ARIA2_SRC"
 cd "$ARIA2_SRC"
 
